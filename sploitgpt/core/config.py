@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # Ollama / LLM settings
     ollama_host: str = "http://localhost:11434"
     model: str = "qwen2.5:32b"
+    llm_model: str = "ollama/qwen2.5:32b"
     
     # Metasploit RPC
     msf_host: str = "127.0.0.1"
