@@ -14,6 +14,7 @@ The core AI agent that:
 import asyncio
 import json
 import re
+import uuid
 from typing import AsyncGenerator, Optional
 
 import httpx
@@ -96,7 +97,7 @@ class Agent:
         self.http_client = httpx.AsyncClient(timeout=120)
         
         # Session tracking
-        self.session_collector = SessionCollector()
+        self.session_collector = SessionCollector(self.settings.sessions_dir / "sessions.db")
         self.current_phase = "recon"
         self.discovered_services: list[str] = []
         self.discovered_hosts: list[str] = []
@@ -104,7 +105,8 @@ class Agent:
         self.lhost: Optional[str] = None
         
         # Start session
-        self.session_id = self.session_collector.start_session()
+        self.session_id = str(uuid.uuid4())[:8]
+        self.session_collector.start_session(self.session_id)
     
     async def process(self, user_input: str) -> AsyncGenerator[AgentResponse, None]:
         """Process user input and yield responses."""
@@ -421,9 +423,10 @@ class Agent:
                     techniques = args.get("techniques_used", [])
                     
                     # Save session
-                    self.session_collector.complete_session(
-                        outcome="success",
-                        summary=summary
+                    self.session_collector.end_session(
+                        session_id=self.session_id,
+                        success=True,
+                        notes=summary
                     )
                     
                     yield AgentResponse(
@@ -471,10 +474,10 @@ class Agent:
             timeout = args.get("timeout", 300)
             
             # Record for training
-            self.session_collector.record_interaction(
-                prompt=f"Execute: {command}",
-                response="",
-                tool_calls=[{"name": "terminal", "args": {"command": command}}]
+            from sploitgpt.training.collector import SessionTurn
+            self.session_collector.add_turn(
+                self.session_id,
+                SessionTurn(role="tool", content=command, tool_name="terminal")
             )
             
             result = await execute_tool("terminal", {"command": command, "timeout": timeout})
@@ -555,8 +558,8 @@ class Agent:
         
         # Record successful patterns
         if "success" in output_lower or "found" in output_lower or "vulnerable" in output_lower:
-            self.session_collector.record_interaction(
-                prompt=command,
-                response=output[:500],  # Truncate for storage
-                success=True
+            from sploitgpt.training.collector import SessionTurn
+            self.session_collector.add_turn(
+                self.session_id,
+                SessionTurn(role="result", content=f"Command: {command}\nOutput: {output[:500]}")
             )
