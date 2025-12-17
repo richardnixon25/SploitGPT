@@ -66,7 +66,7 @@ Multiple attack paths available:
 [3] 🔑 Credential Attack (T1110) - Brute force SSH
 [4] 🎯 Full Assessment - Try all paths
 
-> 
+>
 ```
 
 ### 🔧 Metasploit Integration
@@ -174,9 +174,14 @@ Configure via `.env` file or environment:
 
 # Or set manually:
 SPLOITGPT_OLLAMA_HOST=http://172.17.0.1:11434  # Ollama endpoint
+SPLOITGPT_MODEL=sploitgpt-local-q3:latest      # Custom SploitGPT model (Ollama tag)
+SPLOITGPT_LLM_MODEL=sploitgpt-local-q3:latest  # Normalized model name used by the app
 SPLOITGPT_MSF_HOST=127.0.0.1                    # MSF RPC bind address
 SPLOITGPT_MSF_PORT=55553                        # MSF RPC port
 SPLOITGPT_MSF_PASSWORD=msf                      # MSF RPC password
+SPLOITGPT_MSF_VERIFY_SSL=true                   # Verify MSF RPC SSL certs (if SSL is enabled)
+# Optional: enable the Shodan tool
+SHODAN_API_KEY=your_shodan_api_key
 ```
 
 ### Auto-Detection

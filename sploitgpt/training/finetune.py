@@ -7,11 +7,11 @@ Runs automatically on first install (~30 min on consumer GPU).
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-import os
 
 
 def check_gpu_available() -> dict[str, Any]:
@@ -39,7 +39,6 @@ def check_gpu_available() -> dict[str, Any]:
 
 def get_recommended_model(gpu_memory_gb: float) -> tuple[str, dict[str, Any]]:
     """Get recommended base model based on GPU memory."""
-    
     if gpu_memory_gb >= 24:
         return "unsloth/Qwen2.5-32B-Instruct-bnb-4bit", {
             "max_seq_length": 4096,
@@ -84,7 +83,6 @@ def run_finetuning(
 ) -> bool:
     """
     Run LoRA fine-tuning on the base model.
-    
     Args:
         training_data: Path to training JSONL file
         output_dir: Where to save the fine-tuned model
@@ -176,7 +174,7 @@ def run_finetuning(
         )
 
     print(f"   {len(dataset)} training examples loaded")
-    
+
     # Training arguments
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -214,12 +212,11 @@ def run_finetuning(
     # Train!
     print("\n🚀 Starting training...")
     print("   This will take ~30 minutes on a consumer GPU\n")
-    
+
     trainer.train()
-    
+
     # Save the model
     print("\n💾 Saving fine-tuned model...")
-    
     # Save LoRA adapters
     model.save_pretrained(output_dir / "lora")
     tokenizer.save_pretrained(output_dir / "lora")
@@ -247,22 +244,25 @@ def run_finetuning(
     print(f"   LoRA adapters: {output_dir / 'lora'}")
     print(f"   Merged model: {output_dir / 'merged'}")
     print(f"   GGUF model: {output_dir / 'gguf'}")
-    
+
     return True
 
 
 def create_ollama_modelfile(gguf_path: Path, output_path: Path) -> Path:
     """Create Ollama Modelfile for the fine-tuned model."""
-    
-    modelfile_content = f'''# SploitGPT - Fine-tuned security model
+
+    modelfile_content = f"""# SploitGPT - Fine-tuned security model
 FROM {gguf_path}
 
 # System prompt
-SYSTEM """You are SploitGPT, an autonomous penetration testing assistant running inside a Kali Linux container. You help security professionals conduct authorized penetration tests.
+SYSTEM \"\"\"You are SploitGPT, an autonomous penetration testing assistant running inside a Kali Linux
+container. You help security professionals conduct authorized penetration tests.
 
-You have access to tools for running terminal commands, searching Metasploit, and executing exploits. Always ask for clarification before running intrusive or potentially dangerous commands.
+You have access to tools for running terminal commands, searching Metasploit, and
+executing exploits. Always ask for clarification before running intrusive or potentially
+dangerous commands.
 
-Be thorough in reconnaissance, methodical in exploitation, and clear in your communication."""
+Be thorough in reconnaissance, methodical in exploitation, and clear in your communication.\"\"\"
 
 # Parameters optimized for security tasks
 PARAMETER temperature 0.7
@@ -270,8 +270,7 @@ PARAMETER top_p 0.9
 PARAMETER top_k 40
 PARAMETER num_ctx 4096
 PARAMETER stop "<|im_end|>"
-'''
-    
+"""
     modelfile_path = output_path / "Modelfile"
     modelfile_path.write_text(modelfile_content)
     

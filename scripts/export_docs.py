@@ -14,11 +14,10 @@ import argparse
 import asyncio
 import json
 import re
+import sys
+from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Iterable
-
-import sys
 
 # Ensure project root is importable when running via `python scripts/...`
 REPO_ROOT = Path(__file__).resolve().parents[1]

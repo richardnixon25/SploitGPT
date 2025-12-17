@@ -12,13 +12,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict
 
 LOG = logging.getLogger(__name__)
 
@@ -40,7 +38,7 @@ class CloudGPU:
     ssh_user: str
     ssh_host: str
     ssh_port: int = 22
-    ssh_key_path: Optional[str] = None
+    ssh_key_path: str | None = None
     remote_base: str = "~/sploitgpt/hashcat_wordlists"
     dry_run: bool = False
     timeout: int = 20
@@ -75,7 +73,7 @@ class CloudGPU:
 
         cmd = self._ssh_base() + ["echo", "connected"]
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=self.timeout)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=self.timeout)
             return True
         except subprocess.CalledProcessError:
             LOG.exception("SSH verification failed")
@@ -84,8 +82,8 @@ class CloudGPU:
             LOG.exception("SSH verification timed out")
             return False
 
-    def _compute_checksums(self, local: Path) -> Dict[str, str]:
-        checks: Dict[str, str] = {}
+    def _compute_checksums(self, local: Path) -> dict[str, str]:
+        checks: dict[str, str] = {}
         for p in sorted(local.iterdir()):
             if not p.is_file():
                 continue
@@ -114,11 +112,11 @@ class CloudGPU:
 
         # Prefer rsync when available
         if shutil.which("rsync"):
-            rsync_cmd = ["rsync", "-aAX", "--delete", str(local) + "/", f"{self.ssh_user}@{self.ssh_host}:{self.remote_base}/", "-e", "ssh -p %s" % self.ssh_port]
+            rsync_cmd = ["rsync", "-aAX", "--delete", str(local) + "/", f"{self.ssh_user}@{self.ssh_host}:{self.remote_base}/", "-e", f"ssh -p {self.ssh_port}"]
             if self.ssh_key_path:
                 rsync_cmd[-1] = rsync_cmd[-1] + f" -i {shlex.quote(str(self.ssh_key_path))}"
             try:
-                subprocess.run(rsync_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+                subprocess.run(rsync_cmd, check=True, capture_output=True, timeout=300)
             except Exception as e:
                 LOG.exception("rsync failed: %s", e)
                 return False
@@ -129,7 +127,7 @@ class CloudGPU:
                 scp_cmd.extend(["-i", str(self.ssh_key_path)])
             scp_cmd.extend([str(local) + "/", f"{self.ssh_user}@{self.ssh_host}:{self.remote_base}/"])
             try:
-                subprocess.run(scp_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+                subprocess.run(scp_cmd, check=True, capture_output=True, timeout=300)
             except Exception as e:
                 LOG.exception("scp failed: %s", e)
                 return False
@@ -138,17 +136,16 @@ class CloudGPU:
         local_checks = self._compute_checksums(local)
 
         # Ask remote to compute checksums for files we transferred
-        names = " ".join(shlex.quote(str(self.remote_base + '/' + name)) for name in local_checks.keys())
         remote_cmd = f"cd {shlex.quote(self.remote_base)} && sha256sum {' '.join(shlex.quote(name) for name in local_checks.keys())} || true"
         ssh_cmd = self._ssh_base() + [remote_cmd]
         try:
-            proc = subprocess.run(ssh_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+            proc = subprocess.run(ssh_cmd, check=True, capture_output=True, text=True, timeout=60)
             out = proc.stdout
         except Exception as e:
             LOG.exception("remote checksum invocation failed: %s", e)
             return False
 
-        remote_checks: Dict[str, str] = {}
+        remote_checks: dict[str, str] = {}
         for line in out.splitlines():
             if not line.strip():
                 continue
@@ -166,7 +163,7 @@ class CloudGPU:
 
         return True
 
-    def run_remote_command(self, cmd: str, timeout: Optional[int] = None) -> tuple[int, str, str]:
+    def run_remote_command(self, cmd: str, timeout: int | None = None) -> tuple[int, str, str]:
         """Run a command on the remote host and return (rc, stdout, stderr)."""
         if self.dry_run:
             LOG.info("[dry-run] would run on %s: %s", self.ssh_host, cmd)
@@ -193,7 +190,7 @@ class CloudGPU:
 
         ssh_cmd = self._ssh_base() + [cmd]
         try:
-            proc = subprocess.run(ssh_cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout or self.timeout)
+            proc = subprocess.run(ssh_cmd, check=False, capture_output=True, text=True, timeout=timeout or self.timeout)
             return proc.returncode, proc.stdout, proc.stderr
         except Exception as e:
             LOG.exception("ssh exec failed: %s", e)

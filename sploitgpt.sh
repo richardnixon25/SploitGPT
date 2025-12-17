@@ -1,7 +1,13 @@
 #!/bin/bash
-# Quick start script for SploitGPT
+#!/bin/bash
+# Quick start script for SploitGPT (works from any directory)
 
-set -e
+set -euo pipefail
+
+ROOT_DIR="/home/cheese/SploitGPT"
+COMPOSE_FILE="${ROOT_DIR}/docker-compose.yml"
+
+cd "$ROOT_DIR"
 
 # Ensure Docker daemon is accessible
 if ! docker info >/dev/null 2>&1; then
@@ -11,10 +17,11 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-# Ensure the toolbox container is running.
-# (The compose service runs as a long-lived container; SploitGPT is executed via exec.)
-if [ -z "$(docker compose ps --status running -q sploitgpt 2>/dev/null)" ]; then
-    docker compose up -d --build
+# Bring up required services if not running
+if [ -z "$(docker compose -f "$COMPOSE_FILE" ps --status running -q ollama 2>/dev/null)" ] || \
+   [ -z "$(docker compose -f "$COMPOSE_FILE" ps --status running -q sploitgpt 2>/dev/null)" ]; then
+  docker compose -f "$COMPOSE_FILE" up -d
 fi
 
-docker compose exec sploitgpt sploitgpt "$@"
+# Exec into the app container to start the TUI
+docker compose -f "$COMPOSE_FILE" exec sploitgpt sploitgpt "$@"

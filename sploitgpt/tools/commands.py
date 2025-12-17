@@ -236,7 +236,7 @@ def get_command(category: str, name: str, **kwargs: object) -> str | None:
     if "{loot_dir}" in cmd and "loot_dir" not in kwargs:
         try:
             from sploitgpt.core.config import get_settings
-            kwargs["loot_dir"] = get_settings().loot_dir
+            kwargs["loot_dir"] = str(get_settings().loot_dir)
         except Exception:
             kwargs["loot_dir"] = "loot"
     

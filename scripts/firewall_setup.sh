@@ -92,7 +92,6 @@ echo -e "${CYAN}[3/5]${NC} Configuring firewall rules..."
 
 configure_ufw() {
     echo "  Configuring UFW..."
-    
     # Ensure default policies
     ufw default deny incoming > /dev/null 2>&1 || true
     ufw default allow outgoing > /dev/null 2>&1 || true
@@ -128,7 +127,6 @@ configure_ufw() {
 
 configure_firewalld() {
     echo "  Configuring firewalld..."
-    
     # Create docker zone
     firewall-cmd --permanent --new-zone=docker 2>/dev/null || true
     firewall-cmd --permanent --zone=docker --add-source=$DOCKER_BRIDGE
@@ -143,7 +141,6 @@ configure_firewalld() {
 
 configure_iptables() {
     echo "  Configuring iptables..."
-    
     # Allow Ollama from Docker bridge
     iptables -I INPUT -p tcp --dport $OLLAMA_PORT -s $DOCKER_BRIDGE -j ACCEPT
     

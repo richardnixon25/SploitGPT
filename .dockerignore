@@ -24,6 +24,7 @@ loot/
 sessions/
 data/
 logs/
+models/
 
 # Unrelated subprojects
 ghostcrew/

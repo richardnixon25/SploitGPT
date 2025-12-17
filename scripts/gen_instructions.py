@@ -18,10 +18,9 @@ from __future__ import annotations
 import argparse
 import json
 import random
-from pathlib import Path
-from typing import Iterable
-
 import sys
+from collections.abc import Iterable
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:

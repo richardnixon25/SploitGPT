@@ -9,7 +9,7 @@ echo '
  ╚════██║██╔═══╝ ██║     ██║   ██║██║   ██║   ██║   ██║██╔═══╝    ██║   
  ███████║██║     ███████╗╚██████╔╝██║   ██║   ╚██████╔╝██║        ██║   
  ╚══════╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝   ╚═╝    ╚═════╝ ╚═╝        ╚═╝   
-                                                                         
+
             [ Autonomous AI Penetration Testing Framework ]
 '
 
@@ -151,12 +151,20 @@ if [ ! -f /app/data/sploitgpt.db ]; then
     python3 -c "from sploitgpt.db import init_db; init_db()"
 fi
 
-# Check for Ollama connection
+# Check for Ollama connection and warm the model
 OLLAMA_URL="${OLLAMA_HOST:-${SPLOITGPT_OLLAMA_HOST:-}}"
+MODEL_NAME="${SPLOITGPT_MODEL:-sploitgpt-local:latest}"
 if [ -n "$OLLAMA_URL" ]; then
     echo "[*] Checking Ollama connection at $OLLAMA_URL..."
     if curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
         echo "[+] Ollama connected"
+        if [ -n "$MODEL_NAME" ]; then
+            echo "[*] Warming model ${MODEL_NAME}..."
+            curl -sS -X POST "$OLLAMA_URL/api/generate" \
+              -H "Content-Type: application/json" \
+              -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"ready\",\"stream\":false}" \
+              >/dev/null 2>&1 || true
+        fi
     else
         echo "[!] Warning: Cannot connect to Ollama at $OLLAMA_URL"
     fi

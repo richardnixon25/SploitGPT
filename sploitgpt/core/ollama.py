@@ -7,6 +7,7 @@ Lightweight, direct connection to Ollama optimized for pentesting workflows.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any, Literal, overload
@@ -14,7 +15,6 @@ from typing import Any, Literal, overload
 import httpx
 
 from sploitgpt.core.config import get_settings
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ class OllamaClient:
                 
             return True
             
-        except Exception as e:
+        except Exception:
             logger.exception("Ollama health check failed")
             return False
     
@@ -171,7 +171,7 @@ class OllamaClient:
             response.raise_for_status()
             tags = response.json()
             return [model["name"] for model in tags.get("models", [])]
-        except Exception as e:
+        except Exception:
             logger.exception("Error listing models")
             return []
 

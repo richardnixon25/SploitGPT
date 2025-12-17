@@ -12,10 +12,10 @@ This is intended to provide targeted context injection at runtime instead of
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import sqlite3
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any

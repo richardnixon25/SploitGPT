@@ -25,6 +25,15 @@ Follow this methodology when given a target. Execute commands using the `termina
    - Check banners, versions
    - Note anything unusual
 
+### 1.3 Shodan (if API configured)
+- Use `/shodan_search "<query>"` to pivot on exposed services; scope with filters like `country:XX`, `org:"Org Name"`, `port:443`, `hostname:"example.com"`.
+- Start with embedded dork lists (Shodan dorks + awesome queries) for ideas; combine with your target keywords.
+- Respect legal/engagement scope and Shodan rate limits; avoid logging in to exposed devices.
+
+### 1.4 Targeted wordlists
+- Use `generate_wordlist` (psudohash) to mutate company/username/hostname into a focused password list saved to `loot/wordlists/`.
+- Combine with Seclists/rockyou for breadth when brute-forcing; keep attempts scoped and low-velocity.
+
 ## Phase 2: Enumeration (per service)
 
 ### Web (80, 443, 8080, etc.)

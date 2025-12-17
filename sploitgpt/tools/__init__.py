@@ -187,7 +187,7 @@ async def terminal(
             else:
                 stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
             output = stdout.decode() if stdout else "(no output)"
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             try:
                 # Ensure the process is fully reaped to avoid resource warnings.
@@ -431,8 +431,8 @@ async def cloud_gpu_sync(
         return "Error: operation requires explicit consent (set consent=True)"
 
     try:
-        from sploitgpt.tools.cloud_gpu import CloudGPU
         from sploitgpt.core.config import get_settings
+        from sploitgpt.tools.cloud_gpu import CloudGPU
 
         settings = get_settings()
         local_dir = local_dir or str(settings.data_dir / "wordlists")
@@ -596,9 +596,9 @@ async def msf_run(
 @register_tool("nmap_scan")
 async def nmap_scan(target: str, ports: str = "-", options: str = "-sV") -> str:
     """Run an nmap scan."""
-    from sploitgpt.core.config import get_settings
-
     import re
+
+    from sploitgpt.core.config import get_settings
 
     loot_dir = get_settings().loot_dir
     loot_dir.mkdir(parents=True, exist_ok=True)
@@ -623,6 +623,7 @@ def _register_builtin_tools() -> None:
         "sploitgpt.tools.cve",
         "sploitgpt.tools.intel",
         "sploitgpt.tools.shodan",
+        "sploitgpt.tools.psudohash",
     ):
         importlib.import_module(mod)
 

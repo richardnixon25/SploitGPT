@@ -43,6 +43,26 @@ async def test_knowledge_search_tool() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generate_wordlist_tool(monkeypatch, tmp_path):
+    """generate_wordlist should run psudohash and write output."""
+
+    # Point loot_dir to temp
+    class DummySettings:
+        def __init__(self, base):
+            self.loot_dir = base
+    dummy = DummySettings(tmp_path)
+    monkeypatch.setattr("sploitgpt.tools.psudohash.get_settings", lambda: dummy)
+
+    result = await execute_tool(
+        "generate_wordlist",
+        {"base": "acme", "extra_words": ["corp"], "years": None, "min_len": 4, "max_len": 8},
+    )
+    assert "psudohash generated wordlist" in result
+    generated = list(tmp_path.glob("**/*.txt"))
+    assert generated, "Expected wordlist file to be written"
+
+
+@pytest.mark.asyncio
 async def test_msf_info_and_sessions_tools_mocked(monkeypatch) -> None:
     """msf_info/msf_sessions should format output without requiring a real msfrpcd."""
 

@@ -1,7 +1,7 @@
-"""
-SploitGPT TUI Application
-"""
+"""SploitGPT TUI Application."""
 
+import asyncio
+from pathlib import Path
 from typing import Any
 
 from textual.app import App, ComposeResult
@@ -11,7 +11,40 @@ from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from sploitgpt.agent import Agent
 from sploitgpt.core.boot import BootContext
+from sploitgpt.core.config import get_settings
 from sploitgpt.design_assets import get_banner_styled, get_phase_style
+
+
+class TerminalSession:
+    """Lightweight persistent shell session with cwd tracking."""
+
+    def __init__(self, start_dir: str | Path | None = None) -> None:
+        self.cwd = Path(start_dir or Path.cwd())
+
+    async def run(self, command: str) -> str:
+        """Run a command with simple built-ins (currently just `cd`)."""
+        cmd = command.strip()
+        if not cmd:
+            return ""
+
+        # Handle cd locally to preserve state across commands.
+        if cmd.startswith("cd"):
+            parts = cmd.split(maxsplit=1)
+            target = parts[1] if len(parts) > 1 else str(Path.home())
+            target_path = (self.cwd / target).expanduser().resolve()
+            if not target_path.exists():
+                return f"cd: no such file or directory: {target}"
+            self.cwd = target_path
+            return ""
+
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            cwd=str(self.cwd),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await proc.communicate()
+        return stdout.decode() if stdout else "(no output)"
 
 
 class PromptInput(Input):
@@ -104,14 +137,18 @@ class SploitGPTApp(App[Any]):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear", "Clear"),
+        Binding("ctrl+t", "toggle_shell_mode", "Shell mode"),
     ]
     
     def __init__(self, context: BootContext):
         super().__init__()
         self.context = context
+        self.settings = get_settings()
         self.agent = Agent(context)
         self.awaiting_choice = False
         self.choice_callback = None
+        self.shell = TerminalSession()
+        self.shell_mode = False
     
     def compose(self) -> ComposeResult:
         yield Header()
@@ -132,12 +169,17 @@ class SploitGPTApp(App[Any]):
         # Welcome message with styled banner
         welcome_banner = get_banner_styled("main")
         output.write(welcome_banner)
+        output.write("[bold cyan]TUI Build: conversational-by-default, !cmd for shell[/]")
         output.write("")
         
+        model_name = self.settings.effective_model
         if self.context.ollama_connected and self.context.model_loaded:
-            output.write("[green]✓[/] LLM connected and model loaded")
+            output.write(f"[green]✓[/] LLM connected; model loaded: [bold]{model_name}[/]")
         elif self.context.ollama_connected:
-            output.write("[yellow]⚠[/] LLM reachable but model not loaded - pull/start the configured model")
+            output.write(
+                f"[yellow]⚠[/] LLM reachable but model not loaded: [bold]{model_name}[/]"
+            )
+            output.write("Run `ollama pull <model>` or start the model.")
         else:
             output.write("[yellow]⚠[/] LLM not connected - run 'ollama serve' on host")
         
@@ -150,10 +192,12 @@ class SploitGPTApp(App[Any]):
             output.write(f"[cyan]ℹ[/] {len(self.context.known_hosts)} known hosts from prior recon")
         
         output.write("")
-        output.write("[dim]Type a command, or prefix with / for AI assistance[/]")
-        output.write("[dim]Examples: nmap -sV 10.0.0.1  |  /scan the network  |  /help[/]")
-        output.write("[dim]Type /banner <phase> for a fresh banner (phases: main, recon, enumeration, vulnerability, exploitation, post_exploitation, privilege_escalation, lateral_movement, persistence, exfiltration).[/]")
-        output.write("")
+        output.write("[bold]How to use:[/] just type what you want (AI). Use !cmd for shell. /help for commands.")
+        output.write(
+            "[dim]Type /banner <phase> for a fresh banner (phases: main, recon, enumeration,"
+        )
+        output.write("[dim]vulnerability, exploitation, post_exploitation, privilege_escalation,")
+        output.write("[dim]lateral_movement, persistence, exfiltration).[/]")
         
         # Focus input
         self.query_one("#prompt-input", PromptInput).focus()
@@ -181,25 +225,35 @@ class SploitGPTApp(App[Any]):
             await self.handle_choice_input(command)
             return
         
-        # Check if it's an AI command or direct shell
-        if command.startswith("/"):
-            await self.handle_agent_command(command[1:])
-        else:
+        # Bang-prefix always forces shell execution.
+        if command.startswith("!"):
+            await self.handle_shell_command(command[1:].strip() or "")
+            return
+
+        # Shell mode routes everything to shell unless explicitly /command
+        if self.shell_mode and not command.startswith("/"):
             await self.handle_shell_command(command)
+            return
+
+        # Slash-prefix is an explicit agent/system command.
+        if command.startswith("/"):
+            await self.handle_agent_command(command[1:].strip())
+            return
+
+        # Default: send to the agent (conversational).
+        await self.handle_agent_command(command)
     
     async def handle_shell_command(self, command: str) -> None:
         """Execute a direct shell command."""
         output = self.query_one("#output", RichLog)
-        
-        try:
-            from sploitgpt.tools import execute_tool
 
-            result = await execute_tool("terminal", {"command": command, "timeout": 300})
+        try:
+            result = await self.shell.run(command)
             if result:
                 for line in result.split("\n"):
                     output.write(line)
         except Exception as e:
-            output.write(f"[red]Error:[/] {e}")
+            output.write(f"[red]Error running shell command:[/] {e}")
     
     def _render_agent_response(self, response: Any) -> None:
         """Render an AgentResponse to the output log."""
@@ -276,6 +330,10 @@ class SploitGPTApp(App[Any]):
             output.write("  [bold]/privesc[/]            - Privilege escalation")
             output.write("  [bold]/banner[/] <phase>     - Display ASCII banner for attack phase")
             output.write("  [bold]/auto[/] on|off        - Toggle autonomous execution confirmations")
+            output.write("  [bold]/shell[/] on|off       - Route input to a local shell (Ctrl+T toggles)")
+            output.write("  [bold]!<cmd>[/]              - Run a single shell command (e.g., !ls -la)")
+            output.write("")
+            output.write("[bold]Default behavior:[/] plain input goes to the AI; use !cmd for shell.")
             output.write("  [bold]/help[/]               - Show this help")
             output.write("")
             output.write("[bold]Available banner phases:[/]")
@@ -313,6 +371,30 @@ class SploitGPTApp(App[Any]):
 
             state = "ON" if self.agent.autonomous else "OFF"
             output.write(f"Autonomous mode is now [bold]{state}[/].")
+            return
+
+        # Handle shell mode toggle
+        if command.lower().startswith("shell"):
+            parts = command.split(maxsplit=1)
+            if len(parts) == 1:
+                state = "ON" if self.shell_mode else "OFF"
+                output.write(f"Shell passthrough is [bold]{state}[/]. Use /shell on or /shell off.")
+                return
+
+            value = parts[1].strip().lower()
+            if value in ("on", "true", "1"):
+                self.shell_mode = True
+            elif value in ("off", "false", "0"):
+                self.shell_mode = False
+            elif value in ("toggle",):
+                self.shell_mode = not self.shell_mode
+            else:
+                output.write("[red]Error:[/] Usage: /shell on|off")
+                return
+
+            state = "ON" if self.shell_mode else "OFF"
+            self._update_prompt_label()
+            output.write(f"Shell passthrough is now [bold]{state}[/].")
             return
 
         # Handle banner command
@@ -360,7 +442,24 @@ class SploitGPTApp(App[Any]):
     def action_clear(self) -> None:
         """Clear the output."""
         self.query_one("#output", RichLog).clear()
+
+    def action_toggle_shell_mode(self) -> None:
+        """Toggle shell passthrough mode via keybinding."""
+        self.shell_mode = not self.shell_mode
+        self._update_prompt_label()
+        state = "ON" if self.shell_mode else "OFF"
+        output = self.query_one("#output", RichLog)
+        output.write(f"[dim]Shell passthrough is now {state} (Ctrl+T).[/]")
     
     async def action_quit(self) -> None:
         """Quit the application."""
+        try:
+            await self.agent.aclose()
+        except Exception:
+            pass
         self.exit()
+
+    def _update_prompt_label(self) -> None:
+        """Refresh the prompt label to reflect current mode."""
+        label = self.query_one("#prompt-label", Static)
+        label.update("shell > " if self.shell_mode else "sploitgpt > ")

@@ -10,10 +10,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import register_tool
-
 # Global intel store
 from sploitgpt.core.config import get_settings
+
+from . import register_tool
 
 _intel_file: Path = get_settings().loot_dir / "intel.json"
 

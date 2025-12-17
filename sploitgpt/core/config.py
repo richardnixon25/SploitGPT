@@ -4,8 +4,9 @@ SploitGPT Configuration
 
 import os
 import subprocess
+import socket
 from pathlib import Path
-from typing import Optional
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -48,17 +49,11 @@ def get_docker_bridge_ip() -> str:
 
 def get_default_ollama_host() -> str:
     """Get the default Ollama host URL."""
-    # Check environment first
-    env_host = os.environ.get("SPLOITGPT_OLLAMA_HOST")
-    if env_host:
-        return env_host
-
-    # In-container default: connect to host via Docker bridge
+    # Hardcoded targets to eliminate host guessing:
+    # - Inside container: always talk to the bundled service name.
+    # - Outside container: localhost.
     if Path("/app").exists():
-        bridge_ip = get_docker_bridge_ip()
-        return f"http://{bridge_ip}:11434"
-
-    # Local dev default
+        return "http://ollama:11434"
     return "http://localhost:11434"
 
 
@@ -73,10 +68,11 @@ class Settings(BaseSettings):
     
     # Ollama / LLM settings
     ollama_host: str = get_default_ollama_host()
-    # Sensible default for ~12GB VRAM GPUs (can be overridden via SPLOITGPT_MODEL)
-    model: str = "qwen2.5:7b"
+    # Default to the bundled SploitGPT model tag; override via SPLOITGPT_MODEL.
+    # Default to the fine-tuned SploitGPT model (local tag).
+    model: str = "sploitgpt-local:latest"
     # Optional canonical form (e.g., "ollama/qwen2.5:7b"); if set, overrides `model`.
-    llm_model: Optional[str] = None
+    llm_model: str | None = None
     
     # Metasploit RPC
     msf_host: str = "127.0.0.1"

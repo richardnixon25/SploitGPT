@@ -11,6 +11,7 @@ The core AI agent that:
 7. Generates payloads and suggests wordlists
 """
 
+import asyncio
 import json
 import re
 import uuid
@@ -76,6 +77,7 @@ class Agent:
         self.context = context
         self.settings = get_settings()
         self.conversation: list[dict[str, Any]] = []
+        self._http_client_closed = False
         # Reset shared context builder for this session
         from sploitgpt.agent.context import get_context_builder
 
@@ -96,6 +98,10 @@ class Agent:
         # Start session
         self.session_id = str(uuid.uuid4())[:8]
         self.session_collector.start_session(self.session_id)
+
+    async def aclose(self) -> None:
+        """Cleanup resources (placeholder for future shared clients)."""
+        self._http_client_closed = True
     
     async def process(self, user_input: str) -> AsyncGenerator[AgentResponse, None]:
         """Process user input and yield responses."""
@@ -567,7 +573,7 @@ class Agent:
                 }
             },
             {
-                "type": "function", 
+                "type": "function",
                 "function": {
                     "name": "get_shells",
                     "description": "Get reverse shell payloads for various languages",
@@ -586,6 +592,46 @@ class Agent:
                         "required": ["lhost"]
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "generate_wordlist",
+                    "description": "Generate a targeted password wordlist using psudohash-style mutations and save it to loot/wordlists.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "base": {
+                                "type": "string",
+                                "description": "Primary keyword (e.g., company, username, hostname)",
+                            },
+                            "extra_words": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Additional keywords to combine",
+                            },
+                            "years": {
+                                "type": "string",
+                                "description": "Optional year or range to append (e.g., '2022' or '2015-2024')",
+                            },
+                            "min_len": {
+                                "type": "integer",
+                                "description": "Minimum length to keep (default 6)",
+                                "default": 6,
+                            },
+                            "max_len": {
+                                "type": "integer",
+                                "description": "Maximum length to keep (default 18)",
+                                "default": 18,
+                            },
+                            "save_as": {
+                                "type": "string",
+                                "description": "Optional filename; defaults to <base>.txt",
+                            },
+                        },
+                        "required": ["base"],
+                    },
+                },
             },
             {
                 "type": "function",

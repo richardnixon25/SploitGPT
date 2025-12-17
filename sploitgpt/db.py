@@ -8,8 +8,8 @@ SQLite database for:
 """
 
 import json
-import sqlite3
 import logging
+import sqlite3
 from pathlib import Path
 
 from sploitgpt.core.config import get_settings

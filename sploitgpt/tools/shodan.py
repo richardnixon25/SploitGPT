@@ -1,12 +1,87 @@
 """Shodan search tool for SploitGPT."""
 
 import asyncio
+import logging
 import os
+import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from . import register_tool
+
+logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _load_embedded_queries() -> list[str]:
+    """Load embedded Shodan dorks/queries from bundled knowledge sources."""
+    base = Path(__file__).resolve().parent.parent
+    sources = [
+        base / "knowledge" / "sources" / "shodan_dorks.md",
+        base / "knowledge" / "sources" / "awesome_shodan_queries.md",
+    ]
+
+    queries: list[str] = []
+    seen: set[str] = set()
+
+    for path in sources:
+        if not path.exists():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        in_block = False
+        for raw in text.splitlines():
+            line = raw.strip()
+            if line.startswith("```"):
+                in_block = not in_block
+                continue
+            if not line:
+                continue
+            if in_block:
+                # Raw dork list in code blocks.
+                val = line
+            else:
+                # Bullet format: - **Title** — `query`
+                match = re.findall(r"`([^`]+)`", line)
+                if match:
+                    val = match[0]
+                else:
+                    continue
+
+            val_norm = val.strip()
+            if val_norm and val_norm not in seen:
+                seen.add(val_norm)
+                queries.append(val_norm)
+
+    return queries
+
+
+def _suggest_queries(user_query: str, limit: int = 5) -> list[str]:
+    """Suggest locally-embedded queries that overlap with the user input."""
+    tokens = [t for t in re.split(r"\s+", user_query.lower()) if t]
+    if not tokens:
+        return []
+
+    scored: list[tuple[int, int, str]] = []
+    for q in _load_embedded_queries():
+        q_lower = q.lower()
+        score = sum(1 for t in tokens if t in q_lower)
+        if score > 0:
+            scored.append((score, -len(q), q))
+
+    scored.sort(reverse=True)
+    return [q for _, __, q in scored[:limit]]
+
+
+def _get_client(timeout: float = 30.0) -> httpx.AsyncClient:
+    """Factory for the HTTP client (patched in tests)."""
+    return httpx.AsyncClient(timeout=timeout)
 
 
 def _coerce_str(value: Any) -> str:
@@ -30,8 +105,8 @@ def _format_banner(raw: Any, max_lines: int = 8, max_line_len: int = 160) -> str
     lines = text.splitlines()
     formatted: list[str] = []
     for line in lines[:max_lines]:
-        formatted.append(line[:max_line_len])
-    if len(lines) > max_lines or any(len(l) > max_line_len for l in lines):
+        formatted.append(_coerce_str(line)[:max_line_len])
+    if len(lines) > max_lines or any(len(line) > max_line_len for line in lines):
         formatted.append("...truncated...")
     return "\n".join(formatted).strip()
 
@@ -97,6 +172,8 @@ async def shodan_search(
 
     limit = max(1, min(limit, 20))
 
+    suggestions = _suggest_queries(query, limit=5)
+
     api_key = os.getenv("SHODAN_API_KEY")
     if not api_key:
         return (
@@ -104,55 +181,86 @@ async def shodan_search(
             "Add SHODAN_API_KEY=your_key to .env to enable this tool."
         )
 
-    # Basic retry for transient errors / rate limits
-    max_attempts = 2
+    max_attempts = 3
+    backoff = 1.0
+    last_error: str | None = None
+
     for attempt in range(1, max_attempts + 1):
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with _get_client(timeout=30.0) as client:
                 resp = await client.get(
                     "https://api.shodan.io/shodan/host/search",
                     params={"key": api_key, "query": query},
                 )
-                resp.raise_for_status()
-                data = resp.json()
-                if isinstance(data, dict) and data.get("error"):
-                    return f"Error: Shodan API error: {data['error']}"
-                break
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            if status in (401, 403):
+            status = resp.status_code
+            retry_after = resp.headers.get("Retry-After")
+            payload: dict[str, Any] = {}
+            try:
+                payload = resp.json() if resp.content else {}
+            except Exception:
+                payload = {}
+
+            if status == 429:
+                last_error = payload.get("error") or "Shodan rate limited (HTTP 429)."
+                if attempt < max_attempts:
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                detail = f"{last_error} Try again later."
+                if retry_after:
+                    detail += f" Retry-After: {retry_after}s."
+                return f"Error: {detail}"
+
+            if status == 401 or status == 403:
                 return "Error: Shodan rejected the request. Check SHODAN_API_KEY."
             if status == 402:
                 return "Error: Shodan plan limit reached (status 402)."
-            if status == 429:
-                if attempt < max_attempts:
-                    await asyncio.sleep(1 * attempt)
-                    continue
-                return "Error: Shodan rate limited (HTTP 429). Try again later or reduce query frequency."
-            # Other HTTP errors
-            try:
-                err_json = e.response.json()
-                if isinstance(err_json, dict) and err_json.get("error"):
-                    return f"Error: Shodan returned {status}: {err_json['error']}"
-            except Exception:
-                pass
-            return f"Error: Shodan returned {status}."
+            if status >= 400:
+                api_error = payload.get("error")
+                if api_error:
+                    return f"Error: Shodan returned {status}: {api_error}"
+                return f"Error: Shodan returned HTTP {status}."
+
+            if isinstance(payload, dict) and payload.get("error"):
+                return f"Error: Shodan API error: {payload['error']}"
+
+            data = payload
+            break
+
         except httpx.TimeoutException:
+            last_error = "timeout"
             if attempt < max_attempts:
-                await asyncio.sleep(1 * attempt)
+                await asyncio.sleep(backoff)
+                backoff *= 2
                 continue
             return "Error: Shodan search timed out."
+        except httpx.RequestError as e:
+            last_error = str(e)
+            logger.debug("Shodan network error: %s", e, exc_info=True)
+            if attempt < max_attempts:
+                await asyncio.sleep(backoff)
+                backoff *= 2
+                continue
+            return "Error: Shodan network error. Please check connectivity."
         except Exception as e:
+            logger.exception("Shodan search failed")
             return f"Error: Shodan search failed: {e}"
     else:
-        return "Error: Shodan search failed after retries."
+        return f"Error: Shodan search failed after retries ({last_error})."
 
     matches = data.get("matches") or []
     total = data.get("total", 0)
-    if not matches:
-        return f"Shodan search: {query}\nNo results found. Total reported: {total}."
 
-    results = [f"Shodan search: {query}", f"Total reported: {total}"]
+    results: list[str] = []
+    if suggestions:
+        results.append("Suggested local queries (offline):")
+        results.extend([f"- {s}" for s in suggestions])
+        results.append("")
+
+    results.append(f"Shodan search: {query}")
+    results.append(f"Total reported: {total}")
+    if not matches:
+        return "\n".join(results + ["No results found."])
 
     for match in matches[:limit]:
         results.append(_format_match(match))

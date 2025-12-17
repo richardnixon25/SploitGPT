@@ -10,8 +10,8 @@ Initializes the agent with:
 """
 
 import asyncio
-import subprocess
 import logging
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
@@ -20,7 +20,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from sploitgpt.core.config import get_settings
-from sploitgpt.core.ollama import test_ollama_connection
+from sploitgpt.core.ollama import OllamaClient, test_ollama_connection
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -212,7 +212,13 @@ async def check_ollama_connection() -> tuple[bool, bool]:
     """Check if Ollama is available and target model is present."""
     try:
         status = await test_ollama_connection()
-        return status.get("connected", False), status.get("healthy", False)
+        connected = status.get("connected", False)
+        healthy = status.get("healthy", False)
+        # Fallback to a direct health_check for stronger signal if reachable but not marked healthy.
+        if connected and not healthy:
+            async with OllamaClient() as client:
+                healthy = await client.health_check()
+        return connected, healthy
     except Exception:
         logger.exception("Ollama connection check failed")
         return False, False
