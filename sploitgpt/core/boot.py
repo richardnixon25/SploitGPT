@@ -42,6 +42,20 @@ def _empty_findings() -> LootFindings:
     }
 
 
+def _is_kali() -> bool:
+    """Detect Kali Linux to avoid noisy tool warnings in the default image."""
+    try:
+        data = Path("/etc/os-release").read_text()
+        return "ID=kali" in data or "ID_LIKE=kali" in data
+    except Exception:
+        return False
+
+
+def _is_loopback_host(host: str) -> bool:
+    """Check if a host string refers to loopback."""
+    return host in ("127.0.0.1", "localhost", "::1")
+
+
 @dataclass
 class BootContext:
     """Context gathered during boot sequence."""
@@ -103,6 +117,16 @@ async def check_tools() -> tuple[list[str], list[str]]:
     Note: Kali has 600+ tools installed. This only verifies the core tools
     that SploitGPT uses most frequently are present and working.
     """
+    if _is_kali():
+        # Trust the base Kali image and skip noisy checks to keep boot fast.
+        essential_tools = [
+            "nmap", "masscan", "msfconsole", "searchsploit", "sqlmap",
+            "gobuster", "nikto", "nuclei", "hydra", "john",
+            "smbclient", "enum4linux", "crackmapexec", "netcat",
+            "curl", "wget",
+        ]
+        return essential_tools, []
+
     # Core tools that SploitGPT relies on heavily
     essential_tools = [
         # Reconnaissance
@@ -232,6 +256,7 @@ async def boot_sequence(quiet: bool = False) -> BootContext:
     """
     ctx = BootContext()
     settings = get_settings()
+    kali_mode = _is_kali()
     
     if quiet:
         # Quiet mode for TUI - no progress spinners
@@ -273,7 +298,9 @@ async def boot_sequence(quiet: bool = False) -> BootContext:
         # Step 2: Core tool checks
         task = progress.add_task("[cyan]Verifying core tools...", total=None)
         ctx.available_tools, ctx.missing_tools = await check_tools()
-        if ctx.missing_tools:
+        if kali_mode:
+            progress.update(task, description="[green]✓ Kali detected: core toolset assumed present")
+        elif ctx.missing_tools:
             progress.update(task, description=f"[yellow]⚠ Core checks: {len(ctx.available_tools)}/{len(ctx.available_tools)+len(ctx.missing_tools)} passed (missing: {', '.join(ctx.missing_tools[:3])})")
         else:
             progress.update(task, description=f"[green]✓ Core checks: {len(ctx.available_tools)} passed")
@@ -290,7 +317,10 @@ async def boot_sequence(quiet: bool = False) -> BootContext:
         task = progress.add_task("[cyan]Connecting to Metasploit...", total=None)
         ctx.msf_connected = await check_msf_connection()
         if ctx.msf_connected:
-            progress.update(task, description="[green]✓ Metasploit RPC connected")
+            desc = "[green]✓ Metasploit RPC connected"
+            if not _is_loopback_host(settings.msf_host):
+                desc += " [yellow](host is not loopback — restrict access)[/yellow]"
+            progress.update(task, description=desc)
         else:
             progress.update(task, description="[yellow]⚠ Metasploit RPC not available")
         
@@ -312,6 +342,8 @@ async def boot_sequence(quiet: bool = False) -> BootContext:
         console.print(f"[dim]Known targets: {', '.join(ctx.known_hosts[:5])}{'...' if len(ctx.known_hosts) > 5 else ''}[/]")
     if ctx.missing_tools:
         console.print(f"[dim yellow]Missing tools: {', '.join(ctx.missing_tools[:5])}[/]")
+    if not _is_loopback_host(settings.msf_host):
+        console.print("[bold yellow]Metasploit RPC host is not loopback; keep it LAN-local and passworded to avoid exposing msfrpcd.[/bold yellow]")
     console.print()
     
     return ctx

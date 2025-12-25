@@ -1,8 +1,7 @@
 """
 Session Data Collector
 
-Captures user sessions for continuous learning.
-This is the "self-improving" aspect - the model learns from real usage.
+Captures user sessions for optional export. Does not auto-train.
 """
 
 import json

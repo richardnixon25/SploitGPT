@@ -39,16 +39,21 @@ SYSTEM_PROMPT = """You are SploitGPT, an AI assistant for authorized red-team pe
 ## Your Environment
 You are running inside a Kali Linux container with access to common security tools.
 
-## Operating Modes
-- **Conversational by default**: explain, ask clarifying questions, and propose next steps.
-- **Execution only when requested**: only run commands when the user explicitly asks you to execute.
+## Default Behavior (Execute-First With Confirmation)
+- Assume the user wants you to execute tasks for them.
+- For any actionable request, respond with a short recommendation (1-3 steps) and then ask for confirmation
+  using the `ask_user` tool. Do not execute until the user confirms.
+- If there are multiple viable tools/paths, present the best recommendation and ask the user which option to execute
+  using `ask_user` with 2-4 concise choices.
 
-## When Execution Is Requested
-1. Present **2-4 options** (different tools/approaches). Recommend the best one.
-2. Ask the user to choose using the `ask_user` tool.
-3. Execute **one step at a time** using tools (primarily `terminal`, sometimes Metasploit tools).
-4. Save important output to `/app/loot/` using `tee` or tool flags.
-5. Do not repeat scans unnecessarily.
+## Clarify Intent
+- If the intent is unclear or missing critical inputs (target, scope, credentials), ask a follow-up question using
+  `ask_user` with multiple-choice options and include an "Other" option.
+
+## When Executing
+1. Execute **one step at a time** using tools (primarily `terminal`, sometimes Metasploit tools).
+2. Save important output to `/app/loot/` using `tee` or tool flags.
+3. Do not repeat scans unnecessarily.
 
 ## Tool Use Rules
 - Prefer **one tool call per step** (one command at a time).
@@ -56,6 +61,7 @@ You are running inside a Kali Linux container with access to common security too
 - Do not guess flags/options. If unsure, use `knowledge_search` or run `<tool> --help` via `terminal`.
 - For Metasploit: prefer `msf_search` -> `msf_info` -> `msf_module` (avoid guessing required options).
 - Use `finish` when the task is complete with a concise summary and (if applicable) MITRE technique IDs.
+- If you need inbound listeners, use an allowed `LPORT` and only start them when needed.
 """
 
 
@@ -168,6 +174,7 @@ class Agent:
 - Services found: {', '.join(self.discovered_services) if self.discovered_services else 'None yet'}
 - Phase: {self.current_phase.upper()}
 - Metasploit: {'Available' if self.context.msf_connected else 'Not connected'}
+- Listener ports: {self.settings.listener_ports} (opened on demand)
 
 {command_ref}
 """
@@ -237,7 +244,7 @@ class Agent:
     def _supports_tools(self) -> bool:
         """Check if the current model supports function calling."""
         # Models known to support Ollama tools
-        tool_models = ["llama3.1", "llama3.2", "mistral", "mixtral", "qwen2.5"]
+        tool_models = ["llama3.1", "llama3.2", "mistral", "mixtral", "qwen2.5", "sploitgpt"]
         model_lower = self.settings.effective_model.lower()
         return any(m in model_lower for m in tool_models)
     
@@ -332,6 +339,25 @@ class Agent:
 
         return None
 
+    def _infer_confirmation_question(self, text: str) -> str | None:
+        """Infer a confirmation prompt when the model asks to execute without a tool call."""
+        lowered = text.lower()
+        triggers = (
+            "would you like me to execute",
+            "would you like me to run",
+            "should i execute",
+            "should i run",
+            "do you want me to execute",
+            "do you want me to run",
+        )
+        if not any(t in lowered for t in triggers):
+            return None
+
+        last_line = text.strip().splitlines()[-1].strip()
+        if last_line.endswith("?"):
+            return last_line
+        return "Execute the recommended step?"
+
     def _get_tool_definitions(self) -> list[dict[str, Any]]:
         """Get tool definitions for function calling."""
         return [
@@ -403,41 +429,6 @@ class Agent:
                             }
                         },
                         "required": ["query"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "cloud_gpu_status",
-                    "description": "Check connectivity to a cloud GPU host (read-only). Returns 'OK: reachable' or an error message.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "ssh_host": {"type": "string", "description": "IP or hostname of the GPU host"},
-                            "ssh_user": {"type": "string", "description": "SSH username to use", "default": "root"},
-                            "ssh_port": {"type": "integer", "description": "SSH port", "default": 22}
-                        },
-                        "required": ["ssh_host"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "cloud_gpu_sync",
-                    "description": "Sync local wordlists to a cloud GPU host. Requires explicit consent before proceeding.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "ssh_host": {"type": "string"},
-                            "ssh_user": {"type": "string", "default": "root"},
-                            "ssh_port": {"type": "integer", "default": 22},
-                            "local_dir": {"type": "string", "description": "Local wordlists directory (optional)"},
-                            "dry_run": {"type": "boolean", "description": "If true, do not perform operations"},
-                            "consent": {"type": "boolean", "description": "Explicit user consent to proceed (required)"}
-                        },
-                        "required": ["ssh_host", "consent"]
                     }
                 }
             },
@@ -671,7 +662,7 @@ class Agent:
         tool_calls = message.get("tool_calls", []) or []
 
         # If no tool calls but we have content, try to parse commands from text
-        if not tool_calls and content and not self._supports_tools():
+        if not tool_calls and content:
             tool_calls = self._parse_commands_from_text(content)
 
         # Keep the UX predictable: one tool call per step.
@@ -706,6 +697,19 @@ class Agent:
                 yield AgentResponse(type="choice", question=question, options=options)
                 return
 
+            inferred = self._infer_confirmation_question(content)
+            if inferred is not None:
+                options = ["Yes", "No"]
+                self._pending = PendingInteraction(
+                    kind="ask_user",
+                    tool_name="ask_user",
+                    tool_args={"question": inferred, "options": options},
+                    question=inferred,
+                    options=options,
+                )
+                yield AgentResponse(type="choice", question=inferred, options=options)
+                return
+
         if not tool_calls:
             return
 
@@ -736,7 +740,8 @@ class Agent:
             return
 
         # Confirmation gate: pause before any execution tool runs
-        if name in ("terminal", "msf_module") and not self.autonomous:
+        execution_tools = {"terminal", "msf_module", "nmap_scan"}
+        if name in execution_tools and not self.autonomous:
             if name == "terminal":
                 preview = args.get("command", "")
             else:

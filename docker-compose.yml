@@ -13,27 +13,19 @@ services:
       ollama:
         condition: service_healthy
 
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-
-    devices:
-      - /dev/net/tun:/dev/net/tun
-
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
-
     security_opt:
       - no-new-privileges:true
 
     environment:
-      SPLOITGPT_OLLAMA_HOST: "http://ollama:11434"
+      SPLOITGPT_OLLAMA_HOST: "${SPLOITGPT_OLLAMA_HOST:-http://ollama:11434}"
       # Hardcode the app to the tuned 7B model tag registered in Ollama.
-      SPLOITGPT_MODEL: "sploitgpt-local:latest"
-      SPLOITGPT_MSF_HOST: "127.0.0.1"
-      SPLOITGPT_MSF_PORT: "55553"
-      SPLOITGPT_MSF_PASSWORD: "sploitgpt"
-      SPLOITGPT_MSF_SSL: "false"
+      SPLOITGPT_MODEL: "${SPLOITGPT_MODEL:-sploitgpt-local:latest}"
+      SPLOITGPT_MSF_HOST: "${SPLOITGPT_MSF_HOST:-127.0.0.1}"
+      SPLOITGPT_MSF_PORT: "${SPLOITGPT_MSF_PORT:-55553}"
+      SPLOITGPT_MSF_PASSWORD: "${SPLOITGPT_MSF_PASSWORD:-sploitgpt}"
+      SPLOITGPT_MSF_SSL: "${SPLOITGPT_MSF_SSL:-false}"
+      SPLOITGPT_LPORT: "${SPLOITGPT_LPORT:-40000}"
+      SPLOITGPT_LISTENER_PORTS: "${SPLOITGPT_LISTENER_PORTS:-40000-40100}"
       TERM: "xterm-256color"
 
     volumes:
@@ -55,7 +47,8 @@ services:
       start_period: 60s
 
     networks:
-      - sploitnet
+      - sploitnet_wan
+      - sploitnet_internal
 
   ollama:
     image: ollama/ollama:latest
@@ -69,6 +62,8 @@ services:
     command: ["serve"]
     volumes:
       - /home/cheese/.ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
@@ -76,10 +71,27 @@ services:
       retries: 12
       start_period: 60s
     networks:
-      - sploitnet
+      - sploitnet_internal
+      - sploitnet_wan
+
+  listener-proxy:
+    image: alpine:3.20
+    container_name: sploitgpt-listeners
+    profiles: ["listeners"]
+    restart: unless-stopped
+    depends_on:
+      sploitgpt:
+        condition: service_started
+    network_mode: "service:sploitgpt"
+    command: ["sleep", "infinity"]
+    ports:
+      - "${SPLOITGPT_LISTENER_PORTS:-40000-40100}:${SPLOITGPT_LISTENER_PORTS:-40000-40100}"
 
 networks:
-  sploitnet:
+  sploitnet_internal:
+    driver: bridge
+    internal: true
+  sploitnet_wan:
     driver: bridge
 
 volumes:

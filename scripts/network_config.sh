@@ -110,11 +110,15 @@ SPLOITGPT_OLLAMA_HOST=http://ollama:11434
 # Model to use
 SPLOITGPT_MODEL=qwen2.5:7b
 
+# Listener port guidance (ports open only when tools bind)
+SPLOITGPT_LPORT=40000
+SPLOITGPT_LISTENER_PORTS=40000-40100
+
 # Your host IP (for reverse shells - update if using VPN)
 LHOST=${HOST_IP}
 
 # Default listener port
-LPORT=4444
+LPORT=40000
 EOF
 
 echo -e "${GREEN}Configuration saved to $ENV_FILE${NC}"
@@ -127,9 +131,10 @@ echo ""
 echo -e "${CYAN}Network Mode Note:${NC}"
 echo ""
 echo "  This project defaults to bridge networking (isolated from the host)."
-echo "  If you need inbound callbacks/listeners (reverse shells, HTTP payload server, etc.),"
-echo "  publish ports in docker-compose.yml (or configure them in Whaler) and use the host's"
-echo "  reachable IP for LHOST."
+echo "  If you need inbound callbacks/listeners (reverse shells, payload servers, etc.),"
+echo "  enable the listener profile to publish a limited port range:"
+echo "    docker compose --profile listeners up -d listener-proxy"
+echo "  Use a port from SPLOITGPT_LISTENER_PORTS and your host's reachable IP for LHOST."
 
 echo ""
 echo -e "${CYAN}VPN Note:${NC}"

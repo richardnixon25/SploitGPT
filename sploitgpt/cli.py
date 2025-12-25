@@ -271,52 +271,10 @@ Or describe any task in natural language:
             console.print("[yellow]LLM not available. Start Ollama first.[/yellow]")
             continue
 
-        # CLI helper: cloud-gpu commands
+        # Legacy cloud-gpu helper (feature removed)
         if task.lower().startswith("cloud-gpu"):
-            parts = task.split()
-            if len(parts) == 1:
-                console.print("Usage: /cloud-gpu status <host> | /cloud-gpu sync <host> [--local-dir PATH]")
-                continue
-
-            sub = parts[1].lower()
-            if sub == "status":
-                if len(parts) < 3:
-                    console.print("Usage: /cloud-gpu status <host>")
-                    continue
-                host = parts[2]
-                console.print(f"Checking cloud GPU status for {host}...")
-                res = await execute_tool("cloud_gpu_status", {"ssh_host": host})
-                console.print(res)
-                continue
-
-            if sub == "sync":
-                if len(parts) < 3:
-                    console.print("Usage: /cloud-gpu sync <host> [--local-dir PATH]")
-                    continue
-                host = parts[2]
-                # Parse optional local-dir
-                local_dir = None
-                if "--local-dir" in parts:
-                    try:
-                        idx = parts.index("--local-dir")
-                        local_dir = parts[idx + 1]
-                    except Exception:
-                        local_dir = None
-
-                # Confirm consent unless in autonomous mode
-                consent = agent.autonomous
-                if not consent:
-                    ans = console.input(f"Proceed to sync wordlists to {host}? (yes/no) ").strip().lower()
-                    consent = ans in ("y", "yes")
-
-                if not consent:
-                    console.print("Aborted: consent required to proceed.")
-                    continue
-
-                console.print(f"Syncing wordlists to {host} (dry-run: no unless told)...")
-                res = await execute_tool("cloud_gpu_sync", {"ssh_host": host, "local_dir": local_dir, "consent": True})
-                console.print(res)
-                continue
+            console.print("Cloud GPU feature has been removed.")
+            continue
         
         await _run_agent_stream(agent, agent.process(task))
         

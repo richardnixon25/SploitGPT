@@ -396,69 +396,6 @@ async def msf_sessions() -> str:
         return f"Error: {e}"
 
 
-@register_tool("cloud_gpu_status")
-async def cloud_gpu_status(ssh_host: str, ssh_user: str = "root", ssh_port: int = 22, ssh_key_path: str | None = None) -> str:
-    """Check connectivity to a cloud GPU host.
-
-    Returns a short string status. This is a read-only operation and does not change remote state.
-    """
-    try:
-        from sploitgpt.tools.cloud_gpu import CloudGPU
-
-        client = CloudGPU(ssh_user=ssh_user, ssh_host=ssh_host, ssh_port=ssh_port, ssh_key_path=ssh_key_path)
-        ok = await __run_in_thread(lambda: client.verify_connectivity())
-        return "OK: reachable" if ok else "Error: not reachable or auth failed"
-    except Exception as e:
-        return f"Error: {e}"
-
-
-@register_tool("cloud_gpu_sync")
-async def cloud_gpu_sync(
-    ssh_host: str,
-    ssh_user: str = "root",
-    local_dir: str | None = None,
-    ssh_port: int = 22,
-    ssh_key_path: str | None = None,
-    dry_run: bool = False,
-    consent: bool = False,
-) -> str:
-    """Sync local wordlists to remote GPU host.
-
-    This operation requires explicit `consent=True` to proceed. If `dry_run=True`, the
-    actions will be planned and shown but not executed.
-    """
-    if not consent:
-        return "Error: operation requires explicit consent (set consent=True)"
-
-    try:
-        from sploitgpt.core.config import get_settings
-        from sploitgpt.tools.cloud_gpu import CloudGPU
-
-        settings = get_settings()
-        local_dir = local_dir or str(settings.data_dir / "wordlists")
-
-        client = CloudGPU(
-            ssh_user=ssh_user,
-            ssh_host=ssh_host,
-            ssh_port=ssh_port,
-            ssh_key_path=ssh_key_path,
-            dry_run=dry_run,
-        )
-
-        ok = await __run_in_thread(lambda: client.sync_wordlists(local_dir))
-        return "OK: synced" if ok else "Error: sync failed"
-    except Exception as e:
-        return f"Error: {e}"
-
-
-async def __run_in_thread(func):
-    """Run blocking function in a thread and return result."""
-    import asyncio
-
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, func)
-
-
 @register_tool("msf_run")
 async def msf_run(
     module: str,

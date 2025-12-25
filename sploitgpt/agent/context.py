@@ -11,6 +11,7 @@ Builds rich context for the agent using:
 """
 
 
+from sploitgpt.core.config import get_settings
 from sploitgpt.knowledge import (
     get_techniques_for_service,
 )
@@ -48,7 +49,7 @@ class ContextBuilder:
         self.discovered_hosts: list[str] = []
         self.current_phase: str = "recon"
         self.lhost: str = ""
-        self.lport: int = 4444
+        self.lport: int = get_settings().lport
         self.target: str = ""
         self.suid_binaries: list[str] = []
     

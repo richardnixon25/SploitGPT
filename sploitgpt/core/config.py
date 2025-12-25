@@ -68,11 +68,14 @@ class Settings(BaseSettings):
     
     # Ollama / LLM settings
     ollama_host: str = get_default_ollama_host()
-    # Default to the bundled SploitGPT model tag; override via SPLOITGPT_MODEL.
-    # Default to the fine-tuned SploitGPT model (local tag).
-    model: str = "sploitgpt-local:latest"
+    # Default to the packaged SploitGPT 3B tools model tag; override via SPLOITGPT_MODEL.
+    model: str = "sploitgpt-3b-tools:latest"
     # Optional canonical form (e.g., "ollama/qwen2.5:7b"); if set, overrides `model`.
     llm_model: str | None = None
+
+    # Listener guidance (ports are only open when tools bind to them)
+    lport: int = 4444
+    listener_ports: str = "40000-40100"
     
     # Metasploit RPC
     msf_host: str = "127.0.0.1"
@@ -97,19 +100,20 @@ class Settings(BaseSettings):
         return self.base_dir / "data"
     
     # Behavior
-    auto_train: bool = True  # Train on new session data at boot
     ask_threshold: float = 0.7  # Confidence below this triggers clarifying question
     max_retries: int = 3
     command_timeout: int = 300  # 5 minutes
 
-    # Cloud GPU defaults (feature disabled by default)
-    cloud_gpu_enabled: bool = False
-    cloud_gpu_default_wordlists: Path = Path("~/.sploitgpt/wordlists").expanduser()
-    cloud_gpu_remote_base: str = "~/sploitgpt/hashcat_wordlists"
     
     # Debug
     debug: bool = False
     log_level: str = "INFO"
+
+    def model_post_init(self, __context: Any) -> None:
+        """Normalize settings after load."""
+        # Always keep Metasploit RPC bound to loopback for local-only control.
+        if self.msf_host not in ("127.0.0.1", "localhost", "::1"):
+            self.msf_host = "127.0.0.1"
     
     def ensure_dirs(self) -> None:
         """Create required directories."""

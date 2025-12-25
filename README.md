@@ -17,8 +17,8 @@
 
 SploitGPT is an AI-powered penetration testing framework that:
 
-- 🧠 **Fine-tunes on install** - Trains a security-specialized model on your GPU
-- 🔄 **Learns from your sessions** - Gets smarter the more you use it
+- 🧠 **Preloaded security brain** - Uses a local model plus RAG over Kali tool docs, MITRE ATT&CK, and exploit references
+- 🔄 **Context-aware** - Uses your session state/loot to stay on-target (no auto-training loops)
 - 🎯 **Asks, doesn't guess** - Clarifying questions instead of wrong assumptions
 - 🔓 **Runs 100% locally** - Private, secure, no API costs after install
 - ⚡ **Executes autonomously** - Actually runs commands, not just suggestions
@@ -30,11 +30,15 @@ SploitGPT is an AI-powered penetration testing framework that:
 git clone https://github.com/YOUR_USERNAME/sploitgpt.git
 cd sploitgpt
 
-# Install (includes 30-min fine-tuning on your GPU)
+# Install (sets up Docker/Ollama/model, no fine-tuning required)
 ./install.sh
 
 # Run
 ./sploitgpt
+
+# If you run the Python CLI outside Docker:
+pip install -r requirements.txt
+python3 -m sploitgpt.cli --task "say hi" --cli
 ```
 
 ## Requirements
@@ -98,18 +102,6 @@ sploitgpt > /enumerate this target
 sploitgpt > what services are running?
 ```
 
-### 📚 Self-Improving
-
-Every session makes the model smarter:
-
-```text
-Boot sequence:
-[✓] Loading SploitGPT model
-[✓] Found 47 new session logs
-[?] Train on recent data? (5 min) [Y/n]: y
-[✓] Model updated with your techniques
-```
-
 ## Architecture
 
 ```text
@@ -134,35 +126,46 @@ Boot sequence:
 
 SploitGPT supports flexible network configurations for different pentesting scenarios.
 
+- Metasploit RPC is local-only (forced to loopback) while Metasploit itself can target LAN/WAN hosts normally.
+
 ### Network Modes
 
-#### 1. Host Networking (Recommended for VPN/WiFi attacks)
+#### 1. Dual-Bridge (Default)
 
-Container shares host's network stack - ideal for:
+SploitGPT runs with two Docker networks:
 
-- VPN tunneling (Mullvad, etc.)
-- WiFi attacks (direct adapter access)
-- LAN pivoting after initial access
+- **sploitnet_internal (internal)**: Ollama only (no WAN)
+- **sploitnet_wan**: SploitGPT container with outbound WAN access for tools
 
-```bash
-# docker-compose.yml
-network_mode: host  # Container uses host network directly
+Ollama is exposed to the host on `127.0.0.1:11434` for the TUI but is not
+reachable from the LAN.
+
+```yaml
+# docker-compose.yml (default)
+networks:
+  sploitnet_internal:
+    internal: true
+  sploitnet_wan:
+    driver: bridge
 ```
 
-#### 2. Bridge Networking (Default Docker)
+#### 2. Host Networking (Advanced)
 
-Isolated container network - ideal for:
+If you need raw host networking (VPN/WiFi adapter access), switch the SploitGPT
+service to `network_mode: host` and run Ollama on the host (or expose it explicitly),
+then set `SPLOITGPT_OLLAMA_HOST` to the host endpoint.
 
-- Lab environments
-- Testing against local VMs
-- Isolated engagements
+### Listener Ports (On Demand)
+
+Inbound listeners (reverse shells, payload servers) are closed unless a tool binds.
+Enable port publishing only when you need it:
 
 ```bash
-# docker-compose.yml  
-network_mode: bridge  # Default Docker networking
-ports:
-  - "4444:4444"  # Expose needed ports
+docker compose --profile listeners up -d listener-proxy
 ```
+
+By default, the published range is `40000-40100` (override via `SPLOITGPT_LISTENER_PORTS`).
+Use ports in that range for `LPORT`.
 
 ### Environment Variables
 
@@ -170,27 +173,29 @@ Configure via `.env` file or environment:
 
 ```bash
 # Generate auto-detected config
-./scripts/network_config.sh > .env
+./scripts/network_config.sh
 
 # Or set manually:
-SPLOITGPT_OLLAMA_HOST=http://172.17.0.1:11434  # Ollama endpoint
+SPLOITGPT_OLLAMA_HOST=http://ollama:11434       # Ollama endpoint
 SPLOITGPT_MODEL=sploitgpt-local-q3:latest      # Custom SploitGPT model (Ollama tag)
 SPLOITGPT_LLM_MODEL=sploitgpt-local-q3:latest  # Normalized model name used by the app
 SPLOITGPT_MSF_HOST=127.0.0.1                    # MSF RPC bind address
 SPLOITGPT_MSF_PORT=55553                        # MSF RPC port
 SPLOITGPT_MSF_PASSWORD=msf                      # MSF RPC password
 SPLOITGPT_MSF_VERIFY_SSL=true                   # Verify MSF RPC SSL certs (if SSL is enabled)
+SPLOITGPT_LPORT=40000                           # Default listener port
+SPLOITGPT_LISTENER_PORTS=40000-40100            # Published listener range
 # Optional: enable the Shodan tool
 SHODAN_API_KEY=your_shodan_api_key
 ```
 
-### Auto-Detection
+### Host Ollama (Optional)
 
-SploitGPT auto-detects the Docker bridge IP at startup. For custom setups:
+If you run Ollama on the host instead of Docker, set the host endpoint:
 
 ```bash
 # Force specific Ollama endpoint
-export SPLOITGPT_OLLAMA_HOST=http://192.168.1.100:11434
+export SPLOITGPT_OLLAMA_HOST=http://127.0.0.1:11434
 docker-compose up -d
 ```
 
@@ -198,28 +203,13 @@ docker-compose up -d
 
 SploitGPT is designed to run securely with the following setup:
 
-### Network Isolation
+### Default Isolation
 
-```text
-┌─────────────────┐     ┌─────────────────────────────────┐
-│     Internet    │     │            Host                 │
-│                 │     │  ┌─────────────────────────┐    │
-└────────┬────────┘     │  │   Ollama (172.17.0.1)   │    │
-         │              │  │   Firewall protected    │    │
-         │ VPN          │  └───────────▲─────────────┘    │
-         ▼              │              │ Docker bridge    │
-┌─────────────────┐     │  ┌───────────┴─────────────┐    │
-│  SploitGPT      │◄────┼──│   Docker Container      │    │
-│  Container      │     │  │   (host networking)     │    │
-│  (via host VPN) │     │  └─────────────────────────┘    │
-└─────────────────┘     └─────────────────────────────────┘
-```
+- **Ollama**: internal Docker network + host-only bind `127.0.0.1:11434` (not exposed to LAN)
+- **SploitGPT**: WAN access via `sploitnet_wan`
+- **LiteLLM proxy**: removed in favor of direct Ollama OpenAI-compatible API
 
-- **Ollama**: Binds only to Docker bridge IP (`172.17.0.1`) - not exposed to internet/LAN
-- **Container**: Uses host networking to share VPN tunnel for anonymous pentesting
-- **Firewall**: UFW/iptables rules block external access to Ollama
-
-### Setup Firewall Rules
+### Host Ollama Firewall (Optional)
 
 ```bash
 # Automated setup (configures UFW/iptables + Ollama binding)
@@ -276,29 +266,14 @@ curl http://localhost:11434/api/tags        # Should fail
 curl http://YOUR_LAN_IP:11434/api/tags      # Should fail
 
 # But accessible from container
-docker exec sploitgpt curl http://172.17.0.1:11434/api/tags  # Should work
+docker exec sploitgpt curl http://ollama:11434/api/tags  # Should work
 ```
 
-## Cloud GPU (experimental)
+## Knowledge Sources (No Auto-Training)
 
-SploitGPT includes an opt-in Cloud GPU feature to help users prepare and use a remote GPU instance (e.g., for running hashcat). The feature is disabled by default and requires explicit consent to perform any remote operations.
-
-Highlights:
-
-- Explicit consent is required for sync and remote commands (set `consent=True` when calling tools).
-- Dry-run mode is supported to preview actions without executing them.
-- Use `cloud_gpu_status` to verify connectivity and `cloud_gpu_sync` to sync wordlists.
-- See `proposals/cloud_gpu_feature` for design notes, security checklist, and sample dialogues.
-
-## Training Data
-
-SploitGPT is trained on:
-
-- MITRE ATT&CK techniques and procedures
-- Atomic Red Team executable tests
-- Public penetration testing writeups
-- Tool documentation and examples
-- Your own session history (opt-in)
+- Local model packaged for security tasks (Kali tool docs, MITRE ATT&CK, exploit references)
+- RAG over bundled docs and your stored loot/sessions to stay context-aware
+- No automatic fine-tuning loops; the bundled model + RAG is the intended path
 
 ## License
 
