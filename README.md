@@ -1,14 +1,27 @@
 # SploitGPT
 
-An autonomous AI agent for penetration testing that runs locally via Ollama. It uses a fine-tuned 7B model trained on MITRE ATT&CK, Metasploit modules, and pentesting methodologies. The agent can execute security tools, interact with Metasploit via RPC, and maintain context across a full engagement.
+An autonomous AI penetration testing agent that connects a fine-tuned LLM to a Kali Linux container. The agent has access to the full Kali toolset and can execute commands, run Metasploit modules, and work through an engagement with minimal user input.
 
-## Features
+## Why This Architecture
 
-- **Tool Execution** - Runs nmap, gobuster, hydra, nuclei, and other tools directly
-- **Metasploit Integration** - Full RPC control for exploits, sessions, and post-exploitation
-- **Knowledge Base** - RAG over MITRE ATT&CK techniques and GTFOBins
+The project is structured so that most components are maintained by others:
+
+- **Kali Linux** - The container pulls the official Kali image with 600+ security tools
+- **Metasploit** - RPC integration gives the agent full control over exploits and sessions
+- **MITRE ATT&CK** - Knowledge base syncs directly from MITRE's official STIX data
+- **GTFOBins** - Privilege escalation techniques pulled from the GTFOBins project
+- **Ollama** - Local LLM inference, no API keys or cloud dependencies
+
+Every fresh build pulls the latest versions. The only custom component is the fine-tuned model, which is trained on pentesting workflows and tool usage patterns.
+
+## Metasploit Viewer
+
+The MSF Viewer opens a real msfconsole window that mirrors everything the agent does via RPC. You can watch exploits run in real-time, verify what the agent is doing, and learn Metasploit syntax just by observing. Trust but verify.
+
+## Additional Features
+
 - **Scope Enforcement** - Block or warn on out-of-scope targets
-- **Audit Logging** - SQLite trail of all tool calls
+- **Audit Logging** - SQLite trail of all commands for compliance
 - **Session Resume** - Save and restore engagement state
 
 ---
@@ -100,37 +113,39 @@ ollama list | grep sploitgpt
 
 ---
 
-## How It Works
+## Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                   YOUR MACHINE (100% LOCAL)                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────┐         ┌────────────────────┐                │
-│  │    Ollama    │◄───────►│   SploitGPT Agent  │                │
-│  │ (LLM on GPU) │         │    (Reasoning)     │                │
-│  └──────────────┘         └─────────┬──────────┘                │
-│                                     │                            │
-│                    ┌────────────────┼────────────────┐          │
-│                    ▼                ▼                ▼          │
-│         ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│         │   Terminal   │  │  Metasploit  │  │   Knowledge  │   │
-│         │ nmap, hydra  │  │     RPC      │  │  MITRE ATT&CK│   │
-│         │ gobuster...  │  │  (localhost) │  │  GTFOBins    │   │
-│         └──────────────┘  └──────────────┘  └──────────────┘   │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │  Security Controls: Scope Enforcement | Audit Logging      │ │
-│  └────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ HOST                                                                     │
+│                                                                          │
+│  ┌─────────────┐      ┌─────────────────────────────────────────────┐   │
+│  │   Ollama    │      │           Kali Linux Container              │   │
+│  │             │      │                                             │   │
+│  │ SploitGPT   │ LLM  │  ┌─────────────────┐  ┌─────────────────┐  │   │
+│  │ 7B Model    │◄────►│  │ SploitGPT Agent │  │   Metasploit    │  │   │
+│  │             │      │  │                 │  │                 │  │   │
+│  │ (GPU)       │      │  │ - Tool calling  │  │ - RPC Server    │  │   │
+│  └─────────────┘      │  │ - RAG/Knowledge │  │ - MSF Viewer    │  │   │
+│                       │  │ - Audit logging │  │                 │  │   │
+│                       │  └────────┬────────┘  └────────┬────────┘  │   │
+│                       │           │                    │           │   │
+│                       │           ▼                    ▼           │   │
+│                       │  ┌─────────────────────────────────────┐  │   │
+│                       │  │         Kali Tool Arsenal           │  │   │
+│                       │  │  nmap  sqlmap  hydra  gobuster      │  │   │
+│                       │  │  nikto  nuclei  dirb  enum4linux   │  │   │
+│                       │  │  ... 600+ tools                     │  │   │
+│                       │  └─────────────────────────────────────┘  │   │
+│                       └─────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Features
+## TUI Features
 
-### Real-Time Activity Panel (TUI)
+### Real-Time Activity Panel
 
 The TUI shows live tool execution status with `Ctrl+A`:
 
@@ -291,19 +306,6 @@ SPLOITGPT_AUDIT_LOG_FILE=data/audit.db
 SHODAN_API_KEY=your_key_here
 ```
 
-### Credential Storage
-
-Sensitive credentials are stored securely via system keyring:
-
-```bash
-# Set credentials (stored in system keyring, not .env)
-./sploitgpt.sh --creds set msf_password
-./sploitgpt.sh --creds set shodan_api_key
-
-# Check status
-./sploitgpt.sh --creds status
-```
-
 ---
 
 ## Project Structure
@@ -312,7 +314,7 @@ Sensitive credentials are stored securely via system keyring:
 SploitGPT/
 ├── sploitgpt/           # Main Python package
 │   ├── agent/           # AI agent and response handling
-│   ├── core/            # Config, boot, audit, scope, credentials
+│   ├── core/            # Config, boot, audit, scope
 │   ├── knowledge/       # RAG, MITRE ATT&CK, GTFOBins
 │   ├── msf/             # Metasploit RPC client
 │   ├── tools/           # Tool implementations (nuclei, shodan, etc.)
@@ -356,11 +358,6 @@ SploitGPT/
 
 # Resume a session
 ./sploitgpt.sh --resume <session_id>
-
-# Manage credentials
-./sploitgpt.sh --creds status
-./sploitgpt.sh --creds set <credential_name>
-./sploitgpt.sh --creds delete <credential_name>
 ```
 
 ### In-Session Commands

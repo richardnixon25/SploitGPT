@@ -487,11 +487,12 @@ Use `session_interact({session.id})` to interact with the session."""
 
 def get_msf_client() -> MetasploitRPC:
     """Create a Metasploit RPC client from application settings."""
+    import os
+
     from sploitgpt.core.config import get_settings
-    from sploitgpt.core.credentials import get_msf_password
 
     settings = get_settings()
-    password = get_msf_password()
+    password = os.environ.get("SPLOITGPT_MSF_PASSWORD") or settings.msf_password
     return MetasploitRPC(
         host=settings.msf_host,
         port=settings.msf_port,

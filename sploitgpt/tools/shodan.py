@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import random
 import re
 from functools import lru_cache
@@ -249,16 +250,10 @@ async def shodan_search(
 
     suggestions = _suggest_queries(query, limit=5)
 
-    # Get API key from credentials module (checks keyring, env, config)
-    from sploitgpt.core.credentials import get_shodan_api_key
-
-    api_key = get_shodan_api_key()
+    # Get API key from environment or config
+    api_key = os.environ.get("SHODAN_API_KEY") or get_settings().shodan_api_key
     if not api_key:
-        return (
-            "Error: Shodan API key is not set.\n"
-            "Set with: sploitgpt --creds set shodan-key\n"
-            "Or set SHODAN_API_KEY environment variable."
-        )
+        return "Error: Shodan API key is not set.\nSet SHODAN_API_KEY in your .env file."
 
     settings = get_settings()
 

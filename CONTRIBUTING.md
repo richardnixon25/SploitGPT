@@ -53,7 +53,7 @@ Thanks for your interest in contributing to SploitGPT! This document provides gu
 ```
 sploitgpt/
 ├── agent/           # AI agent logic and response handling
-├── core/            # Configuration, boot, audit, scope, credentials
+├── core/            # Configuration, boot, audit, scope
 ├── knowledge/       # RAG, MITRE ATT&CK, GTFOBins integration
 ├── msf/             # Metasploit RPC client
 ├── tools/           # Tool implementations (nuclei, shodan, etc.)
