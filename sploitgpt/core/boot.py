@@ -108,6 +108,7 @@ class BootContext:
 
     # State
     msf_connected: bool = False
+    sliver_connected: bool = False
     ollama_connected: bool = False
     model_loaded: bool = False
 
@@ -288,6 +289,21 @@ def _try_open_msf_viewer(settings) -> None:
         logger.debug(f"Could not open MSF viewer: {e}")
 
 
+def _try_open_sliver_viewer(settings) -> None:
+    """Attempt to open Sliver viewer terminal (fails silently if unavailable)."""
+    if not getattr(settings, "sliver_viewer_enabled", False):
+        return
+
+    try:
+        from sploitgpt.sliver.viewer import open_sliver_viewer
+
+        open_sliver_viewer()
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"Could not open Sliver viewer: {e}")
+
+
 async def check_msf_connection(*, retries: int = 8, delay_s: float = 0.5) -> bool:
     """Check if Metasploit RPC is available.
 
@@ -327,6 +343,30 @@ async def check_msf_connection(*, retries: int = 8, delay_s: float = 0.5) -> boo
         if attempt < retries:
             await asyncio.sleep(delay_s)
 
+    return False
+
+
+async def check_sliver_connection(*, retries: int = 3, delay_s: float = 0.5) -> bool:
+    """Check if Sliver gRPC is available."""
+    settings = get_settings()
+
+    config_path = getattr(settings, "sliver_config", None)
+    if not config_path:
+        return False
+
+    for attempt in range(1, retries + 1):
+        try:
+            from sploitgpt.sliver import get_sliver_client
+
+            client = get_sliver_client(config_path)
+            if await client.connect():
+                _try_open_sliver_viewer(settings)
+                return True
+        except Exception as e:
+            if attempt < retries:
+                await asyncio.sleep(delay_s)
+            else:
+                logger.debug(f"Sliver connection failed: {e}")
     return False
 
 
@@ -379,6 +419,7 @@ async def boot_sequence(quiet: bool = False) -> BootContext:
         ctx.findings = findings
 
         ctx.msf_connected = await check_msf_connection()
+        ctx.sliver_connected = await check_sliver_connection()
 
         connected, healthy = await check_ollama_connection()
         ctx.ollama_connected = connected
@@ -438,7 +479,15 @@ async def boot_sequence(quiet: bool = False) -> BootContext:
         else:
             progress.update(task, description="[yellow]⚠ Metasploit RPC not available")
 
-        # Step 5: Ollama/LLM
+        # Step 5: Sliver
+        task = progress.add_task("[cyan]Connecting to Sliver...", total=None)
+        ctx.sliver_connected = await check_sliver_connection()
+        if ctx.sliver_connected:
+            progress.update(task, description="[green]✓ Sliver gRPC connected")
+        else:
+            progress.update(task, description="[yellow]⚠ Sliver gRPC not available")
+
+        # Step 6: Ollama/LLM
         task = progress.add_task("[cyan]Connecting to LLM...", total=None)
         connected, healthy = await check_ollama_connection()
         ctx.ollama_connected = connected

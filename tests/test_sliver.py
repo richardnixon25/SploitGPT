@@ -724,7 +724,7 @@ class TestSliverToolsRegistration:
             "sliver_listeners",
             "sliver_start_listener",
             "sliver_stop_listener",
-            "sliver_generate",
+            # "sliver_generate",  # Disabled due to Sliver server bug
             "sliver_profiles",
             "sliver_version",
         ]
@@ -737,7 +737,8 @@ class TestSliverToolsRegistration:
         from sploitgpt.tools import TOOLS
 
         sliver_tools = [t for t in TOOLS if t.startswith("sliver_")]
-        assert len(sliver_tools) == 10
+        # 9 tools (sliver_generate disabled due to server bug)
+        assert len(sliver_tools) == 9
 
 
 class TestSliverToolsValidation:
@@ -802,31 +803,15 @@ class TestSliverToolsValidation:
                 assert "domain" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_sliver_generate_validates_os(self):
-        """Test sliver_generate validates OS."""
+    async def test_sliver_generate_returns_disabled_message(self):
+        """Test sliver_generate returns disabled message due to server bug."""
         from sploitgpt.tools.sliver import sliver_generate
 
-        result = await sliver_generate(os="invalid_os", c2_url="mtls://10.0.0.1:8888")
-        assert "Error" in result
-
-    @pytest.mark.asyncio
-    async def test_sliver_generate_validates_arch(self):
-        """Test sliver_generate validates architecture."""
-        from sploitgpt.tools.sliver import sliver_generate
-
-        result = await sliver_generate(
-            os="linux", arch="invalid_arch", c2_url="mtls://10.0.0.1:8888"
-        )
-        assert "Error" in result
-
-    @pytest.mark.asyncio
-    async def test_sliver_generate_requires_c2_url(self):
-        """Test sliver_generate requires C2 URL."""
-        from sploitgpt.tools.sliver import sliver_generate
-
-        result = await sliver_generate(os="linux", arch="amd64", c2_url="")
-        assert "Error" in result
-        assert "c2_url" in result.lower()
+        result = await sliver_generate(os="linux", c2_url="mtls://10.0.0.1:8888")
+        assert "unavailable" in result.lower()
+        assert "sliver console" in result.lower()
+        # Should mention the GitHub issue
+        assert "1771" in result
 
 
 class TestSliverToolsConnectionHandling:

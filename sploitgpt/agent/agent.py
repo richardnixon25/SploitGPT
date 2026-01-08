@@ -58,7 +58,7 @@ You are running inside a Kali Linux container with access to common security too
 - Do not call tools until after the user confirms. If the user declines, offer a short alternative or ask how they'd like to proceed.
 
 ## When Executing
-1. Execute one step at a time using tools (primarily `terminal`, sometimes Metasploit tools).
+1. Execute one step at a time using tools (primarily `terminal`, sometimes Metasploit or Sliver tools).
 2. Save important output to `/app/loot/` using `tee` or tool flags.
 3. Do not repeat scans unnecessarily.
 4. On failure, switch strategy or tool rather than retrying the same call.
@@ -68,10 +68,48 @@ You are running inside a Kali Linux container with access to common security too
 - Wait for results before choosing the next step.
 - When choosing among Kali tools, use `tool_search` to discover the best-fit command(s) if unsure.
 - Do not guess flags/options. If unsure, use `tool_help` (preferred) or `knowledge_search`, then run via `terminal`.
- - For Metasploit: prefer `msf_search` -> `msf_info` -> `msf_run` (avoid guessing required options).
- - Do not invent tool names; run commands via `terminal`.
+- For Metasploit: prefer `msf_search` -> `msf_info` -> `msf_run` (avoid guessing required options).
+- For Sliver: prefer `sliver_start_listener` -> deploy implant -> `sliver_sessions` -> `sliver_execute` workflow.
+- Do not invent tool names; run commands via `terminal`.
 - Use `finish` when the task is complete with a concise summary and (if applicable) MITRE technique IDs.
 - If you need inbound listeners, use an allowed `LPORT` and only start them when needed.
+
+## Sliver vs Metasploit: When to Use Each
+
+**Use Sliver (sliver_* tools) when:**
+- Stealth is critical (EDR/AV present)
+- Need persistent beacons with jitter
+- Modern Windows targets with Defender ATP
+- Red team operations requiring OPSEC
+- Long-term access (beacons check in periodically)
+- Need pivoting via SOCKS5/TCP pivots
+
+**Use Metasploit (msf_* tools) when:**
+- Exploiting known CVEs (larger exploit library)
+- Using auxiliary scanners/modules
+- Rapid testing in lab/CTF environments
+- Need specific Meterpreter post modules
+- Established workflow with known exploits
+
+**Sliver Tools Quick Reference:**
+- `sliver_sessions` - List active sessions/beacons
+- `sliver_use` - Select session/beacon by ID
+- `sliver_execute` - Run command on target (immediate for sessions, queued for beacons)
+- `sliver_kill` - Terminate session/beacon
+- `sliver_listeners` - List C2 listeners
+- `sliver_start_listener` - Start listener (mtls/http/https/dns)
+- `sliver_stop_listener` - Stop listener by job ID
+- `sliver_profiles` - List saved implant profiles
+- `sliver_version` - Server info
+
+**Note:** Implant generation must be done via Sliver console (generate tool temporarily disabled).
+
+**Sliver Workflow:**
+1. `sliver_start_listener(protocol="mtls", port=8888)` - Start listener
+2. Generate implant via Sliver console: `generate --mtls LHOST:8888 --os windows`
+3. Deploy implant to target
+4. `sliver_sessions()` - Verify callback
+5. `sliver_execute(target_id="...", command="whoami")` - Run commands
 """
 
 
@@ -277,6 +315,12 @@ class Agent:
 
         # Current context
         listener_ports = getattr(self.settings, "listener_ports", "40000-40100")
+
+        # Check Sliver availability
+        sliver_status = (
+            "Available" if getattr(self.context, "sliver_connected", False) else "Not connected"
+        )
+
         context_info = f"""
 ## Current Session
 - Target: {self.target or "Not set - ask user for target"}
@@ -284,6 +328,7 @@ class Agent:
 - Services found: {", ".join(self.discovered_services) if self.discovered_services else "None yet"}
 - Phase: {self.current_phase.upper()}
 - Metasploit: {"Available" if self.context.msf_connected else "Not connected"}
+- Sliver C2: {sliver_status}
 - Listener ports: {listener_ports} (opened on demand)
 
 {command_ref}

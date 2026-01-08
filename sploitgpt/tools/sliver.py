@@ -297,6 +297,15 @@ async def sliver_kill(target_id: str, force: bool = False) -> str:
             if s.id.startswith(target_id) or s.id == target_id:
                 success = await sliver.kill_session(s.id, force=force)
                 if success:
+                    # Echo to viewer
+                    try:
+                        from sploitgpt.sliver.viewer import echo_operation
+
+                        echo_operation(
+                            "Session terminated", "kill", {"target": s.id[:8], "name": s.name}
+                        )
+                    except Exception:
+                        pass
                     return f"Session {s.name} ({s.id[:8]}...) killed."
                 return f"Failed to kill session {s.id}"
 
@@ -305,6 +314,15 @@ async def sliver_kill(target_id: str, force: bool = False) -> str:
             if b.id.startswith(target_id) or b.id == target_id:
                 success = await sliver.kill_beacon(b.id)
                 if success:
+                    # Echo to viewer
+                    try:
+                        from sploitgpt.sliver.viewer import echo_operation
+
+                        echo_operation(
+                            "Beacon removed", "kill", {"target": b.id[:8], "name": b.name}
+                        )
+                    except Exception:
+                        pass
                     return f"Beacon {b.name} ({b.id[:8]}...) removed."
                 return f"Failed to remove beacon {b.id}"
 
@@ -461,6 +479,13 @@ async def sliver_stop_listener(job_id: int) -> str:
 
         success = await sliver.kill_job(job_id_int)
         if success:
+            # Echo to viewer
+            try:
+                from sploitgpt.sliver.viewer import echo_operation
+
+                echo_operation("Listener stopped", "kill", {"job_id": job_id_int})
+            except Exception:
+                pass
             return f"Listener (job #{job_id_int}) stopped."
         return f"Failed to stop job #{job_id_int}"
 
@@ -474,7 +499,10 @@ async def sliver_stop_listener(job_id: int) -> str:
 # =============================================================================
 
 
-@register_tool("sliver_generate")
+# NOTE: sliver_generate is disabled due to a known Sliver server bug
+# See: https://github.com/BishopFox/sliver/issues/1771
+# Users should generate implants manually via the Sliver console
+# @register_tool("sliver_generate")
 async def sliver_generate(
     os: str = "linux",
     arch: str = "amd64",
@@ -487,6 +515,10 @@ async def sliver_generate(
     save_path: str = "",
 ) -> str:
     """Generate a Sliver implant.
+
+    NOTE: This tool is currently disabled due to a known Sliver server bug.
+    Generate implants manually using the Sliver console instead:
+        sliver > generate --mtls <ip>:<port> --os <os> --arch <arch>
 
     Args:
         os: Target OS - "linux", "windows", or "darwin"
@@ -502,6 +534,24 @@ async def sliver_generate(
     Returns:
         Information about the generated implant.
     """
+    # DISABLED: Known Sliver server bug causes "record not found" error
+    # See: https://github.com/BishopFox/sliver/issues/1771
+    return """**sliver_generate is currently unavailable**
+
+Due to a known Sliver server bug, implant generation via the Python API fails.
+Please generate implants manually using the Sliver console:
+
+    sliver > generate --mtls <ip>:<port> --os linux --arch amd64
+    sliver > generate --mtls <ip>:<port> --os windows --arch amd64 --format exe
+    sliver > generate beacon --mtls <ip>:<port> --os linux --seconds 60 --jitter 30
+
+Once generated, you can use all other Sliver tools (sessions, execute, listeners, etc.)
+to manage and interact with your implants.
+
+See: https://github.com/BishopFox/sliver/issues/1771
+"""
+
+    # Original implementation below (disabled)
     os_target = (os or "linux").strip().lower()
     arch = (arch or "amd64").strip().lower()
     c2_url = (c2_url or "").strip()
