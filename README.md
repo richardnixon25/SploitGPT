@@ -1,26 +1,15 @@
 # SploitGPT
 
-```text
- ███████╗██████╗ ██╗      ██████╗ ██╗████████╗ ██████╗ ██████╗ ████████╗
- ██╔════╝██╔══██╗██║     ██╔═══██╗██║╚══██╔══╝██╔════╝ ██╔══██╗╚══██╔══╝
- ███████╗██████╔╝██║     ██║   ██║██║   ██║   ██║  ███╗██████╔╝   ██║
- ╚════██║██╔═══╝ ██║     ██║   ██║██║   ██║   ██║   ██║██╔═══╝    ██║
- ███████║██║     ███████╗╚██████╔╝██║   ██║   ╚██████╔╝██║        ██║
- ╚══════╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝   ╚═╝    ╚═════╝ ╚═╝        ╚═╝
-```
+An autonomous AI agent for penetration testing that runs locally via Ollama. It uses a fine-tuned 7B model trained on MITRE ATT&CK, Metasploit modules, and pentesting methodologies. The agent can execute security tools, interact with Metasploit via RPC, and maintain context across a full engagement.
 
-**Local-First AI Pentesting Assistant**
+## Features
 
-100% local AI for penetration testing. Your targets never touch the cloud.
-
-## Key Features
-
-- **Zero Cloud Dependencies** - Runs entirely on your hardware using Ollama
-- **Actually Executes Tools** - Direct Metasploit RPC integration, not just suggestions  
-- **Security-Trained Models** - Fine-tuned on MITRE ATT&CK, Metasploit modules, pentesting workflows
-- **Scope Enforcement** - Prevent accidental out-of-scope testing with configurable allow/block lists
-- **Audit Logging** - Full audit trail of all tool calls for compliance and review
-- **Session Management** - Save, resume, and review penetration testing sessions
+- **Tool Execution** - Runs nmap, gobuster, hydra, nuclei, and other tools directly
+- **Metasploit Integration** - Full RPC control for exploits, sessions, and post-exploitation
+- **Knowledge Base** - RAG over MITRE ATT&CK techniques and GTFOBins
+- **Scope Enforcement** - Block or warn on out-of-scope targets
+- **Audit Logging** - SQLite trail of all tool calls
+- **Session Resume** - Save and restore engagement state
 
 ---
 
