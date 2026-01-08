@@ -1,0 +1,36 @@
+============================================================
+DEDUPLICATION REPORT
+============================================================
+
+Files processed: 9
+Total entries before: 3858
+Total entries after: 3852
+Duplicates removed: 6
+Reduction: 0.2%
+
+------------------------------------------------------------
+DUPLICATE DETAILS
+------------------------------------------------------------
+
+  - "What does the --kill flag do in the jobs command?..."
+    Found in: scaled/commands_extended.jsonl
+
+  - "What does the --kill flag do in the sessions command?..."
+    Found in: scaled/commands_extended.jsonl
+
+  - "What does the --kill flag do in the beacons command?..."
+    Found in: scaled/commands_extended.jsonl
+
+  - "What does the -id flag do in the use command?..."
+    Found in: scaled/commands_extended.jsonl
+
+  - "What does the -path flag do in the upload command?..."
+    Found in: scaled/commands_extended.jsonl
+
+  - "What does the -path flag do in the download command?..."
+    Found in: scaled/commands_extended.jsonl
+
+
+============================================================
+END OF REPORT
+============================================================

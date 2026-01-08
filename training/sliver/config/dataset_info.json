@@ -1,0 +1,28 @@
+{
+  "name": "sploitgpt-sliver",
+  "version": "1.0",
+  "description": "Sliver C2 training data for SploitGPT",
+  "categories": [
+    "commands",
+    "scenarios",
+    "concepts",
+    "errors",
+    "variations"
+  ],
+  "category_counts": {
+    "commands": 1510,
+    "scenarios": 70,
+    "concepts": 155,
+    "errors": 162,
+    "variations": 1961
+  },
+  "total_examples": 3858,
+  "format": "alpaca",
+  "source": "Generated from Sliver v1.6.x documentation and command reference",
+  "created": "2026-01-08",
+  "files": {
+    "train": "output/train.jsonl",
+    "test": "output/test.jsonl",
+    "full": "output/sliver_training.jsonl"
+  }
+}
