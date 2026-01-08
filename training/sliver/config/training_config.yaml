@@ -1,0 +1,146 @@
+# Sliver LLM Fine-Tuning Configuration
+# For extending SploitGPT to support Sliver C2
+
+# Base model options:
+# 1. Start fresh from Qwen2.5-7B
+# 2. Continue from existing SploitGPT model (recommended)
+base_model: "cheeseman2422/sploitgpt-7b-v5"
+# Alternatively: "Qwen/Qwen2.5-7B-Instruct"
+
+# Model output
+output_model_name: "sploitgpt-7b-v6-sliver"
+output_dir: "models-adapters/sploitgpt-7b-v6-sliver"
+
+# Training method
+training:
+  method: "lora"  # Options: lora, qlora, full
+  
+  # LoRA configuration
+  lora:
+    r: 64                    # Rank - higher = more capacity, more memory
+    lora_alpha: 128          # Scaling factor (usually 2x r)
+    lora_dropout: 0.05       # Dropout for regularization
+    bias: "none"             # Options: none, all, lora_only
+    task_type: "CAUSAL_LM"
+    
+    # Target modules for Qwen2.5
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+  
+  # QLoRA configuration (if using qlora method)
+  qlora:
+    load_in_4bit: true
+    bnb_4bit_compute_dtype: "float16"
+    bnb_4bit_quant_type: "nf4"
+    bnb_4bit_use_double_quant: true
+
+# Training hyperparameters
+hyperparameters:
+  # Learning rate
+  learning_rate: 2.0e-5
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  
+  # Batch size
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 8
+  # Effective batch size: 4 * 8 = 32
+  
+  # Training duration
+  num_train_epochs: 3
+  max_steps: -1  # -1 = use epochs
+  
+  # Sequence length
+  max_seq_length: 4096
+  
+  # Regularization
+  weight_decay: 0.01
+  
+  # Optimization
+  optim: "adamw_torch"
+  gradient_checkpointing: true
+  
+  # Precision
+  fp16: false
+  bf16: true  # Use bf16 if GPU supports it (A100, RTX 3090+)
+  
+  # Logging
+  logging_steps: 10
+  save_steps: 500
+  eval_steps: 250
+  save_total_limit: 3
+
+# Dataset configuration
+dataset:
+  # Training data
+  train_file: "training/combined/merged_dataset.jsonl"
+  
+  # Evaluation data
+  eval_file: "training/evaluation/benchmarks/sliver_command_accuracy.jsonl"
+  
+  # Format: alpaca or sharegpt
+  format: "alpaca"
+  
+  # Data processing
+  preprocessing:
+    remove_duplicates: true
+    max_samples: null  # null = use all
+    shuffle: true
+    seed: 42
+
+# System prompt for training
+system_prompt: |
+  You are SploitGPT, an expert AI assistant for penetration testing and red team operations.
+  You help security professionals use tools like Metasploit and Sliver effectively and responsibly.
+  Always explain your reasoning and the security implications of actions.
+  Only assist with authorized security testing.
+
+# Prompt template (Alpaca format)
+prompt_template: |
+  ### System:
+  {system}
+
+  ### Instruction:
+  {instruction}
+
+  ### Input:
+  {input}
+
+  ### Response:
+  {output}
+
+# GGUF quantization settings for deployment
+quantization:
+  export_gguf: true
+  gguf_methods:
+    - "q4_k_m"   # Good balance of size and quality
+    - "q5_k_m"   # Better quality, larger
+    - "q8_0"     # Highest quality quantized
+  
+  # llama.cpp settings
+  llama_cpp_path: "llama.cpp"
+
+# Hardware requirements
+requirements:
+  # Minimum for LoRA training
+  min_gpu_memory_gb: 16
+  
+  # Recommended
+  recommended_gpu: "RTX 4090 or A100"
+  
+  # For QLoRA (reduced memory)
+  qlora_min_gpu_memory_gb: 8
+
+# Wandb logging (optional)
+wandb:
+  enabled: false
+  project: "sploitgpt-sliver"
+  entity: null
+  run_name: null
