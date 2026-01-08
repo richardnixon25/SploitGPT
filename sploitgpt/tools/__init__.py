@@ -1065,6 +1065,7 @@ def _register_builtin_tools() -> None:
         "sploitgpt.tools.payloads",
         "sploitgpt.tools.shodan",
         "sploitgpt.tools.psudohash",
+        "sploitgpt.tools.sliver",
     ):
         importlib.import_module(mod)
 

