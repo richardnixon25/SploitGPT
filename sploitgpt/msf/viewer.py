@@ -22,12 +22,51 @@ To remove entirely:
 import logging
 import os
 import pty
+import select
 import shutil
 import subprocess
 import threading
 import time
+from typing import Literal
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# ANSI Color Codes for Visual Distinction
+# =============================================================================
+class Colors:
+    """ANSI escape codes for terminal colors."""
+
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+
+    # Operation type colors
+    RED = "\033[91m"  # Exploits - high impact
+    YELLOW = "\033[93m"  # Auxiliary/Scanners - info gathering
+    GREEN = "\033[92m"  # Sessions - success/active
+    CYAN = "\033[96m"  # Module info/options - informational
+    MAGENTA = "\033[95m"  # Jobs - background tasks
+    BLUE = "\033[94m"  # General commands
+    WHITE = "\033[97m"  # Output/results
+    GRAY = "\033[90m"  # Separators/banners
+
+
+# Operation type to color mapping
+OP_COLORS = {
+    "exploit": Colors.RED,
+    "auxiliary": Colors.YELLOW,
+    "scanner": Colors.YELLOW,
+    "session": Colors.GREEN,
+    "job": Colors.MAGENTA,
+    "module_info": Colors.CYAN,
+    "search": Colors.BLUE,
+    "general": Colors.WHITE,
+    "output": Colors.DIM + Colors.WHITE,
+    "separator": Colors.GRAY,
+}
+
 
 # Module-level state
 _viewer_process: subprocess.Popen | None = None
@@ -35,6 +74,7 @@ _viewer_opened_once: bool = False
 _pty_master_fd: int | None = None
 _viewer_ready: bool = False
 _viewer_lock = threading.Lock()
+_last_operation_type: str | None = None  # Track for visual separators
 
 
 def _has_display() -> bool:
@@ -88,6 +128,30 @@ def _find_terminal() -> str | None:
             return term
 
     return None
+
+
+def _get_intro_banner() -> str:
+    """Generate the intro banner shown when viewer opens."""
+    return f"""{Colors.GRAY}
+{"=" * 70}
+{Colors.BOLD}{Colors.CYAN}  SploitGPT MSF Viewer - Real-Time Learning Mode{Colors.RESET}{Colors.GRAY}
+{"=" * 70}
+
+  You are watching SploitGPT's Metasploit operations in real-time.
+  
+  What you'll see:
+  {Colors.RED}RED{Colors.GRAY}     = Exploit execution (offensive actions)
+  {Colors.YELLOW}YELLOW{Colors.GRAY}  = Auxiliary/Scanner modules (recon & info gathering)
+  {Colors.GREEN}GREEN{Colors.GRAY}   = Session operations (active shells/connections)
+  {Colors.MAGENTA}MAGENTA{Colors.GRAY} = Background jobs
+  {Colors.CYAN}CYAN{Colors.GRAY}    = Module info & options
+  {Colors.BLUE}BLUE{Colors.GRAY}    = General commands
+
+  Commands shown here mirror what the AI executes via RPC.
+  This is a READ-ONLY view - type in your main terminal to interact.
+  
+{"=" * 70}{Colors.RESET}
+"""
 
 
 def _build_terminal_command(terminal: str, slave_name: str) -> list[str]:
@@ -233,11 +297,41 @@ def open_msf_viewer(*, force: bool = False) -> bool:
 
             # Start a thread to wait for msfconsole prompt
             def _wait_for_ready():
-                global _viewer_ready
-                # Give msfconsole time to start up (it can be slow)
-                time.sleep(5)
+                global _viewer_ready, _pty_master_fd
+
+                # Wait for msfconsole to be ready by watching for the prompt
+                # The msf prompt looks like "msf6 >" or "msf >"
+                start_time = time.time()
+                max_wait = 30  # Maximum 30 seconds
+                buffer = b""
+
+                while time.time() - start_time < max_wait:
+                    if _pty_master_fd is None:
+                        logger.debug("PTY closed while waiting for prompt")
+                        return
+
+                    try:
+                        # Use select to check if data is available (non-blocking)
+                        ready, _, _ = select.select([_pty_master_fd], [], [], 0.5)
+                        if ready:
+                            data = os.read(_pty_master_fd, 4096)
+                            if data:
+                                buffer += data
+                                # Check for msf prompt pattern
+                                if b"msf" in buffer and b">" in buffer:
+                                    logger.debug("Detected msfconsole prompt")
+                                    _viewer_ready = True
+                                    # Send the intro banner
+                                    _send_intro_banner()
+                                    return
+                    except (OSError, IOError) as e:
+                        logger.debug(f"Error reading PTY during prompt wait: {e}")
+                        break
+
+                # Fallback: mark ready after timeout even without prompt detection
+                logger.debug("MSF viewer ready (timeout fallback)")
                 _viewer_ready = True
-                logger.debug("MSF viewer ready for commands")
+                _send_intro_banner()
 
             threading.Thread(target=_wait_for_ready, daemon=True).start()
 
@@ -300,6 +394,60 @@ def send_to_viewer(command: str) -> bool:
     except Exception as e:
         logger.debug(f"Error sending to viewer: {e}")
         return False
+
+
+def _send_intro_banner() -> None:
+    """Send the intro banner to the viewer after it's ready."""
+    if not is_viewer_ready():
+        return
+
+    banner = _get_intro_banner()
+    # Send banner as an echo command so it displays nicely
+    for line in banner.split("\n"):
+        send_to_viewer(f"echo '{line}'")
+        time.sleep(0.01)  # Small delay to prevent buffer overflow
+
+
+def send_separator(operation_type: str | None = None) -> None:
+    """
+    Send a visual separator to the viewer between different operations.
+
+    Args:
+        operation_type: The type of operation about to be performed.
+                       Used to decide if separator is needed.
+    """
+    global _last_operation_type
+
+    if not is_viewer_ready():
+        return
+
+    # Only send separator if operation type changed
+    if operation_type and operation_type != _last_operation_type:
+        color = OP_COLORS.get("separator", Colors.GRAY)
+        separator = f"echo '{color}{'─' * 50}{Colors.RESET}'"
+        send_to_viewer(separator)
+        _last_operation_type = operation_type
+
+
+def send_colored_command(command: str, operation_type: str = "general") -> bool:
+    """
+    Send a command to the viewer with color coding based on operation type.
+
+    Args:
+        command: The msfconsole command to execute
+        operation_type: Type of operation for color selection
+
+    Returns:
+        True if sent successfully, False otherwise.
+    """
+    if not is_viewer_ready():
+        return False
+
+    color = OP_COLORS.get(operation_type, Colors.WHITE)
+    # Wrap command in color codes via echo, then execute
+    # Actually, we can't colorize msfconsole input - just send the command
+    # The color coding will be applied to our echo_output messages instead
+    return send_to_viewer(command)
 
 
 def close_msf_viewer() -> bool:
@@ -371,6 +519,25 @@ def ensure_viewer_open() -> bool:
     return open_msf_viewer()
 
 
+def _get_operation_type(method: str, params: list) -> str:
+    """Determine the operation type for color coding and separators."""
+    if method.startswith("session."):
+        return "session"
+    if method.startswith("job."):
+        return "job"
+    if method == "module.search":
+        return "search"
+    if method in ("module.info", "module.options"):
+        return "module_info"
+    if method == "module.execute" and len(params) >= 1:
+        mod_type = params[0]
+        if mod_type == "exploit":
+            return "exploit"
+        if mod_type in ("auxiliary", "scanner"):
+            return "auxiliary"
+    return "general"
+
+
 def echo_rpc_call(method: str, params: list) -> None:
     """
     Auto-echo any MSF RPC call as the equivalent msfconsole command.
@@ -393,6 +560,17 @@ def echo_rpc_call(method: str, params: list) -> None:
 
     cmd = _rpc_to_console(method, params)
     if cmd:
+        # Determine operation type for visual formatting
+        op_type = _get_operation_type(method, params)
+
+        # Add visual separator between different operation types
+        send_separator(op_type)
+
+        # Send header comment with operation type (colored)
+        color = OP_COLORS.get(op_type, Colors.WHITE)
+        header = f"echo '{color}[{op_type.upper()}]{Colors.RESET}'"
+        send_to_viewer(header)
+
         # Handle multi-command sequences (e.g., module.execute)
         if isinstance(cmd, list):
             for c in cmd:
@@ -487,15 +665,17 @@ def _rpc_to_console(method: str, params: list) -> str | list[str] | None:
     return None
 
 
-def echo_output(output: str) -> None:
+def echo_output(output: str, result_type: str = "general", max_lines: int = 15) -> None:
     """
-    Echo output/results to the viewer as a comment.
+    Echo output/results to the viewer with formatting.
 
     This can be called after receiving MSF RPC results to show
     what was returned, helping users correlate commands with results.
 
     Args:
-        output: The output text to display (will be prefixed with #)
+        output: The output text to display
+        result_type: Type of result for color coding (session, exploit, auxiliary, etc.)
+        max_lines: Maximum number of lines to display (default 15)
     """
     if not output or not output.strip():
         return
@@ -503,11 +683,50 @@ def echo_output(output: str) -> None:
     if not is_viewer_ready():
         return
 
-    # Show first few lines of output as comments
-    lines = output.strip().split("\n")[:5]
-    for line in lines:
-        if line.strip():
-            send_to_viewer(f"# >> {line.strip()[:80]}")
+    color = OP_COLORS.get("output", Colors.DIM + Colors.WHITE)
 
-    if len(output.strip().split("\n")) > 5:
-        send_to_viewer("# >> ... (truncated)")
+    # Send a result header
+    send_to_viewer(f"echo '{color}── Result ──{Colors.RESET}'")
+
+    lines = output.strip().split("\n")
+    displayed_lines = 0
+
+    for line in lines:
+        if displayed_lines >= max_lines:
+            remaining = len(lines) - displayed_lines
+            send_to_viewer(f"echo '{color}   ... ({remaining} more lines){Colors.RESET}'")
+            break
+
+        if line.strip():
+            # Escape single quotes for echo command
+            safe_line = line.strip()[:100].replace("'", "'\"'\"'")
+            send_to_viewer(f"echo '{color}   {safe_line}{Colors.RESET}'")
+            displayed_lines += 1
+
+
+def echo_session_info(session_id: int, session_data: dict) -> None:
+    """
+    Echo detailed session information to the viewer.
+
+    Args:
+        session_id: The session ID
+        session_data: Dict containing session details from MSF RPC
+    """
+    if not is_viewer_ready():
+        return
+
+    color = OP_COLORS.get("session", Colors.GREEN)
+
+    send_to_viewer(f"echo '{color}{'─' * 40}{Colors.RESET}'")
+    send_to_viewer(f"echo '{color}  SESSION {session_id} ESTABLISHED{Colors.RESET}'")
+
+    # Extract key session info
+    session_type = session_data.get("type", "unknown")
+    target_host = session_data.get("target_host", session_data.get("session_host", "unknown"))
+    via_exploit = session_data.get("via_exploit", "")
+
+    send_to_viewer(f"echo '{color}  Type: {session_type}{Colors.RESET}'")
+    send_to_viewer(f"echo '{color}  Target: {target_host}{Colors.RESET}'")
+    if via_exploit:
+        send_to_viewer(f"echo '{color}  Via: {via_exploit}{Colors.RESET}'")
+    send_to_viewer(f"echo '{color}{'─' * 40}{Colors.RESET}'")

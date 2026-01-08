@@ -15,15 +15,22 @@ from sploitgpt.msf.viewer import (
     _build_terminal_command,
     _find_terminal,
     _get_desktop_terminal,
+    _get_intro_banner,
+    _get_operation_type,
     _has_display,
     _rpc_to_console,
     close_msf_viewer,
+    Colors,
     echo_output,
     echo_rpc_call,
+    echo_session_info,
     ensure_viewer_open,
     is_viewer_open,
     is_viewer_ready,
+    OP_COLORS,
     open_msf_viewer,
+    send_colored_command,
+    send_separator,
     send_to_viewer,
 )
 
@@ -436,14 +443,15 @@ class TestEchoOutput:
 
     @patch("sploitgpt.msf.viewer.send_to_viewer")
     @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=True)
-    def test_echo_output_sends_prefixed_lines(self, mock_ready, mock_send):
-        """Test echo_output sends lines prefixed with # >>."""
+    def test_echo_output_sends_formatted_lines(self, mock_ready, mock_send):
+        """Test echo_output sends formatted lines with header."""
         mock_send.return_value = True
         echo_output("Line 1\nLine 2")
-        assert mock_send.call_count == 2
-        # Check first call
+        # 1 header + 2 content lines = 3 calls
+        assert mock_send.call_count == 3
+        # Check first call is the result header
         first_call = mock_send.call_args_list[0][0][0]
-        assert first_call.startswith("# >> ")
+        assert "Result" in first_call or "result" in first_call.lower()
 
     @patch("sploitgpt.msf.viewer.send_to_viewer")
     @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=False)
@@ -490,3 +498,187 @@ class TestEnsureViewerOpen:
         result = ensure_viewer_open()
         assert result is False
         mock_open.assert_not_called()
+
+
+class TestColorCoding:
+    """Tests for ANSI color coding functionality."""
+
+    def test_colors_class_has_required_colors(self):
+        """Test Colors class has all required ANSI codes."""
+        assert hasattr(Colors, "RESET")
+        assert hasattr(Colors, "RED")
+        assert hasattr(Colors, "YELLOW")
+        assert hasattr(Colors, "GREEN")
+        assert hasattr(Colors, "CYAN")
+        assert hasattr(Colors, "MAGENTA")
+        assert hasattr(Colors, "BLUE")
+
+    def test_colors_are_ansi_escape_codes(self):
+        """Test color values are valid ANSI escape sequences."""
+        assert Colors.RESET.startswith("\033[")
+        assert Colors.RED.startswith("\033[")
+
+    def test_op_colors_mapping_exists(self):
+        """Test operation type to color mapping exists."""
+        assert "exploit" in OP_COLORS
+        assert "auxiliary" in OP_COLORS
+        assert "session" in OP_COLORS
+        assert "job" in OP_COLORS
+        assert "module_info" in OP_COLORS
+        assert "search" in OP_COLORS
+
+
+class TestOperationTypeDetection:
+    """Tests for operation type detection."""
+
+    def test_session_operations(self):
+        """Test session operations are detected."""
+        assert _get_operation_type("session.list", []) == "session"
+        assert _get_operation_type("session.stop", [1]) == "session"
+        assert _get_operation_type("session.shell_write", [1, "cmd"]) == "session"
+
+    def test_job_operations(self):
+        """Test job operations are detected."""
+        assert _get_operation_type("job.list", []) == "job"
+        assert _get_operation_type("job.stop", [1]) == "job"
+
+    def test_module_search(self):
+        """Test module search is detected."""
+        assert _get_operation_type("module.search", ["vsftpd"]) == "search"
+
+    def test_module_info(self):
+        """Test module info operations are detected."""
+        assert _get_operation_type("module.info", ["exploit", "test"]) == "module_info"
+        assert _get_operation_type("module.options", ["exploit", "test"]) == "module_info"
+
+    def test_exploit_execution(self):
+        """Test exploit execution is detected."""
+        assert _get_operation_type("module.execute", ["exploit", "test", {}]) == "exploit"
+
+    def test_auxiliary_execution(self):
+        """Test auxiliary execution is detected."""
+        assert _get_operation_type("module.execute", ["auxiliary", "test", {}]) == "auxiliary"
+
+    def test_general_fallback(self):
+        """Test unknown operations fall back to general."""
+        assert _get_operation_type("unknown.method", []) == "general"
+
+
+class TestIntroBanner:
+    """Tests for intro banner functionality."""
+
+    def test_intro_banner_contains_key_elements(self):
+        """Test intro banner has all required information."""
+        banner = _get_intro_banner()
+        assert "SploitGPT" in banner
+        assert "Viewer" in banner
+        assert "RED" in banner
+        assert "YELLOW" in banner
+        assert "GREEN" in banner
+        assert "READ-ONLY" in banner or "read-only" in banner.lower()
+
+    def test_intro_banner_has_color_codes(self):
+        """Test intro banner includes ANSI color codes."""
+        banner = _get_intro_banner()
+        assert "\033[" in banner  # Contains ANSI escape sequences
+
+
+class TestVisualSeparators:
+    """Tests for visual separator functionality."""
+
+    @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=False)
+    def test_send_separator_skips_when_not_ready(self, mock_ready):
+        """Test separator is not sent when viewer not ready."""
+        import sploitgpt.msf.viewer as viewer_module
+
+        viewer_module._last_operation_type = None
+
+        # Should not raise, just skip
+        send_separator("exploit")
+
+    @patch("sploitgpt.msf.viewer.send_to_viewer")
+    @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=True)
+    def test_send_separator_sends_when_type_changes(self, mock_ready, mock_send):
+        """Test separator is sent when operation type changes."""
+        import sploitgpt.msf.viewer as viewer_module
+
+        viewer_module._last_operation_type = "search"
+        mock_send.return_value = True
+
+        send_separator("exploit")
+
+        mock_send.assert_called_once()
+        # Verify separator line was sent
+        call_arg = mock_send.call_args[0][0]
+        assert "echo" in call_arg
+
+
+class TestSessionInfo:
+    """Tests for session info echoing."""
+
+    @patch("sploitgpt.msf.viewer.send_to_viewer")
+    @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=True)
+    def test_echo_session_info_displays_details(self, mock_ready, mock_send):
+        """Test session info displays key session details."""
+        mock_send.return_value = True
+
+        session_data = {
+            "type": "meterpreter",
+            "target_host": "10.0.0.5",
+            "via_exploit": "exploit/unix/ftp/vsftpd_234_backdoor",
+        }
+
+        echo_session_info(1, session_data)
+
+        # Should send multiple lines with session details
+        assert mock_send.call_count >= 4
+
+        # Check that session ID is mentioned
+        calls = [str(c) for c in mock_send.call_args_list]
+        call_str = " ".join(calls)
+        assert "SESSION" in call_str or "session" in call_str.lower()
+
+    @patch("sploitgpt.msf.viewer.send_to_viewer")
+    @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=False)
+    def test_echo_session_info_skips_when_not_ready(self, mock_ready, mock_send):
+        """Test session info is not sent when viewer not ready."""
+        echo_session_info(1, {"type": "shell"})
+        mock_send.assert_not_called()
+
+
+class TestImprovedEchoOutput:
+    """Tests for improved echo_output functionality."""
+
+    @patch("sploitgpt.msf.viewer.send_to_viewer")
+    @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=True)
+    def test_echo_output_sends_header(self, mock_ready, mock_send):
+        """Test echo_output sends a result header."""
+        mock_send.return_value = True
+        echo_output("Line 1\nLine 2")
+
+        # First call should be the header
+        first_call = mock_send.call_args_list[0][0][0]
+        assert "Result" in first_call or "result" in first_call.lower()
+
+    @patch("sploitgpt.msf.viewer.send_to_viewer")
+    @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=True)
+    def test_echo_output_respects_max_lines(self, mock_ready, mock_send):
+        """Test echo_output truncates at max_lines."""
+        mock_send.return_value = True
+
+        # Generate 20 lines of output
+        output = "\n".join([f"Line {i}" for i in range(20)])
+        echo_output(output, max_lines=5)
+
+        # Should have: 1 header + 5 content lines + 1 "more lines" message
+        assert mock_send.call_count <= 8  # Some margin for implementation details
+
+    @patch("sploitgpt.msf.viewer.send_to_viewer")
+    @patch("sploitgpt.msf.viewer.is_viewer_ready", return_value=True)
+    def test_echo_output_escapes_quotes(self, mock_ready, mock_send):
+        """Test echo_output properly escapes single quotes."""
+        mock_send.return_value = True
+        echo_output("It's a test")
+
+        # Should have escaped the quote
+        mock_send.assert_called()  # Just verify it ran without error

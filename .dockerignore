@@ -26,6 +26,16 @@ data/
 logs/
 models/
 
+# Large model files (use host Ollama or mount separately)
+models-gguf/
+models-adapters/
+*.gguf
+*.safetensors
+
+# Build artifacts / submodules not needed in container
+llama.cpp/
+llama_cpp_tools/
+
 # Unrelated subprojects
 ghostcrew/
 
