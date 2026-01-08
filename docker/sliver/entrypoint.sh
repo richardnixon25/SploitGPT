@@ -22,8 +22,8 @@ generate_operator() {
         echo "[*] Waiting for Sliver server to start..."
         sleep 5
         
-        # Generate operator config
-        /usr/local/bin/sliver-server operator --name "${operator_name}" --lhost 0.0.0.0 --save "${config_file}"
+        # Generate operator config with full permissions
+        /usr/local/bin/sliver-server operator --name "${operator_name}" --lhost 0.0.0.0 --permissions all --save "${config_file}"
         
         # Stop temporary daemon
         kill $DAEMON_PID 2>/dev/null || true
